@@ -961,6 +961,12 @@ int mdss_mdp_overlay_pipe_setup(struct msm_fb_data_type *mfd,
 		}
 	}
 
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/11/12 qcom patch:fix camera preview issue 
+	if (pipe->src_fmt->is_yuv && (pipe->type == MDSS_MDP_PIPE_TYPE_VIG))
+		pipe->csc_coeff_set = req->color_space;
+#endif
+
 	/*
 	 * When scaling is enabled src crop and image
 	 * width and height is modified by user
@@ -1031,6 +1037,12 @@ exit_fail:
 
 	/* invalidate any overlays in this framebuffer after failure */
 	list_for_each_entry(pipe, &mdp5_data->pipes_used, list) {
+
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/09/21 qcom patch:fix mdp overlay issue
+		if (pipe->type == MDSS_MDP_PIPE_TYPE_CURSOR)
+			continue;
+#endif
 		pr_debug("freeing allocations for pipe %d\n", pipe->num);
 		mdss_mdp_smp_unreserve(pipe);
 		pipe->params_changed = 0;
@@ -1566,7 +1578,14 @@ static int __overlay_queue_pipes(struct msm_fb_data_type *mfd)
 					pipe->num);
 			mdss_mdp_mixer_pipe_unstage(pipe, pipe->mixer_left);
 			mdss_mdp_mixer_pipe_unstage(pipe, pipe->mixer_right);
+
+#ifndef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/09/21 qcom patch:fix mdp overlay issue		
 			pipe->dirty = true;
+#else
+			if (pipe->type != MDSS_MDP_PIPE_TYPE_CURSOR)
+				pipe->dirty = true;
+#endif
 
 			if (buf)
 				__pipe_buf_mark_cleanup(mfd, buf);
@@ -3126,7 +3145,21 @@ int mdss_mdp_cursor_pipe_setup(struct msm_fb_data_type *mfd,
 	pr_debug("req id:%d cursor_pipe:%d pnum:%d\n",
 		req->id, cursor_pipe, pipe->ndx);
 
+#ifndef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/09/06 qcom patch:fix mdp overlay issue
+	if (mdata->mdss_util->iommu_attached()) {
+		cursor_addr = mfd->cursor_buf_iova;
+	} else {
+		if (MDSS_LPAE_CHECK(mfd->cursor_buf_phys)) {
+			pr_err("can't access phy mem >4GB w/o iommu\n");
+			ret = -ERANGE;
+			goto done;
+		}
+		cursor_addr = mfd->cursor_buf_phys;
+	}
+#else
 	cursor_addr = mfd->cursor_buf_iova;
+#endif
 
 	buf = mdss_mdp_overlay_buf_alloc(mfd, pipe);
 	if (!buf) {

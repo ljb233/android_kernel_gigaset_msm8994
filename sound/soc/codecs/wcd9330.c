@@ -40,6 +40,51 @@
 #include "wcdcal-hwdep.h"
 #include "wcd_cpe_core.h"
 
+/*
+ * Add by Harry For LM48560 driver
+ */
+#ifdef CONFIG_SND_SOC_LM48560
+extern int revpa_controls_registe(struct snd_soc_codec *codec);
+#endif
+
+/*
+ * For ES704(Harry)
+ */
+#if defined(CONFIG_SND_SOC_ES705) || defined(CONFIG_SND_SOC_ES705_ESCORE) || \
+	defined(CONFIG_SND_SOC_ES804_ESCORE)
+#include "audience/es705-export.h"
+#endif
+
+#if defined(CONFIG_SND_SOC_ES705)
+
+#define CONFIG_SND_SOC_ESXXX
+#define REMOTE_ROUTE_ENABLE_CB  es705_remote_route_enable
+#define SLIM_GET_CHANNEL_MAP_CB es705_slim_get_channel_map
+#define SLIM_SET_CHANNEL_MAP_CB es705_slim_set_channel_map
+#define SLIM_HW_PARAMS_CB       es705_slim_hw_params
+#define REMOTE_CFG_SLIM_RX_CB	es705_remote_cfg_slim_rx
+#define REMOTE_CLOSE_SLIM_RX_CB	es705_remote_close_slim_rx
+#define REMOTE_CFG_SLIM_TX_CB	es705_remote_cfg_slim_tx
+#define REMOTE_CLOSE_SLIM_TX_CB	es705_remote_close_slim_tx
+#define REMOTE_ADD_CODEC_CONTROLS_CB	es705_remote_add_codec_controls
+
+#elif defined(CONFIG_SND_SOC_ES705_ESCORE) || \
+	defined(CONFIG_SND_SOC_ES804_ESCORE)
+
+#if defined(CONFIG_SND_SOC_ES_SLIM)
+#define CONFIG_SND_SOC_ESXXX
+#define REMOTE_ROUTE_ENABLE_CB		es705_remote_route_enable
+#define SLIM_GET_CHANNEL_MAP_CB		escore_slim_get_channel_map
+#define SLIM_SET_CHANNEL_MAP_CB		escore_slim_set_channel_map
+#define SLIM_HW_PARAMS_CB		escore_slim_hw_params
+#define REMOTE_CFG_SLIM_RX_CB		escore_remote_cfg_slim_rx
+#define REMOTE_CLOSE_SLIM_RX_CB		escore_remote_close_slim_rx
+#define REMOTE_CFG_SLIM_TX_CB		escore_remote_cfg_slim_tx
+#define REMOTE_CLOSE_SLIM_TX_CB		escore_remote_close_slim_tx
+#define REMOTE_ADD_CODEC_CONTROLS_CB	es705_remote_add_codec_controls
+#endif
+#endif
+
 enum {
 	VI_SENSE_1,
 	VI_SENSE_2,
@@ -1320,6 +1365,106 @@ static const struct soc_enum tomtom_conn_mad_enum =
 	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(tomtom_conn_mad_text),
 			tomtom_conn_mad_text);
 
+/*
+ * Add by Harry for MIC_BISA1/3 kcontrol
+ */
+static int mic_bisa3_status = 0;
+static int mic_bisa1_status = 0;
+static const char *const tomtom_mic_bisa3_text[] = {
+	"OFF","ON"
+};
+
+static const struct soc_enum tomtom_mic_bisa3_enum = 
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(tomtom_mic_bisa3_text),
+			tomtom_mic_bisa3_text);
+
+static int tomtom_mic_bais3_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int rc;
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	
+	mic_bisa3_status = ucontrol->value.integer.value[0];
+	
+	if (mic_bisa3_status)
+		rc = snd_soc_dapm_force_enable_pin(&codec->dapm,"MIC BIAS3 External");
+	else
+		rc = snd_soc_dapm_disable_pin(&codec->dapm,"MIC BIAS3 External");
+
+	pr_debug("%s,mic_bisa3_status = %d\n",__func__,mic_bisa3_status);
+
+	if (! rc)
+		snd_soc_dapm_sync(&codec->dapm);
+
+	
+	return rc;	
+}
+
+static int tomtom_mic_bais3_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	pr_debug("%s,mic_bisa3_status = %d\n",__func__,mic_bisa3_status);
+
+	ucontrol->value.integer.value[0] = mic_bisa3_status;
+
+	return 0;
+}
+
+static int tomtom_mic_bais1_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	int rc;
+	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
+	
+	mic_bisa1_status = ucontrol->value.integer.value[0];
+	
+	if (mic_bisa1_status)
+		rc = snd_soc_dapm_force_enable_pin(&codec->dapm,"MIC BIAS1 External");
+	else
+		rc = snd_soc_dapm_disable_pin(&codec->dapm,"MIC BIAS1 External");
+
+	pr_debug("%s,mic_bisa1_status = %d\n",__func__,mic_bisa1_status);
+
+	if (! rc)
+		snd_soc_dapm_sync(&codec->dapm);
+
+	
+	return rc;	
+}
+
+static int tomtom_mic_bais1_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	pr_debug("%s,mic_bisa1_status = %d\n",__func__,mic_bisa1_status);
+
+	ucontrol->value.integer.value[0] = mic_bisa1_status;
+
+	return 0;
+}
+
+static struct snd_soc_codec *g_tomtom_codec;
+
+int tomtom_mic_bais1_enable(int enable)
+{
+	int rc;
+
+	if (! g_tomtom_codec) 
+		return -EINVAL;
+	
+	if (enable)
+		rc = snd_soc_dapm_force_enable_pin(&g_tomtom_codec->dapm,"MIC BIAS1 External");
+	else
+		rc = snd_soc_dapm_disable_pin(&g_tomtom_codec->dapm,"MIC BIAS1 External");
+
+	pr_debug("%s,mic_bisa1_status = %d\n",__func__,enable);
+
+	if (! rc)
+		snd_soc_dapm_sync(&g_tomtom_codec->dapm);	
+
+	return rc;
+}
+
+// Enable of add by Harry for MIC_BISA1/3
 
 static int tomtom_mad_input_get(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
@@ -1695,6 +1840,12 @@ static const struct snd_kcontrol_new tomtom_snd_controls[] = {
 
 	SOC_ENUM_EXT("MAD Input", tomtom_conn_mad_enum,
 			tomtom_mad_input_get, tomtom_mad_input_put),
+
+	// Add by Harry for enable MIC_BAIS1 and MIC_BAIS3
+	SOC_ENUM_EXT("MIC_BAIS3 Enable",tomtom_mic_bisa3_enum,
+			tomtom_mic_bais3_get,tomtom_mic_bais3_put),
+	SOC_ENUM_EXT("MIC_BAIS1 Enable",tomtom_mic_bisa3_enum,
+			tomtom_mic_bais1_get,tomtom_mic_bais1_put)
 
 };
 
@@ -5950,6 +6101,135 @@ static int tomtom_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
+
+/**
+ * For ES704(Harry) 
+ */
+#ifdef CONFIG_SND_SOC_ESXXX
+int (*remote_route_enable)(struct snd_soc_dai *dai) = REMOTE_ROUTE_ENABLE_CB;
+int (*slim_get_channel_map)(struct snd_soc_dai *dai,
+		unsigned int *tx_num, unsigned int *tx_slot,
+		unsigned int *rx_num, unsigned int *rx_slot)
+			= SLIM_GET_CHANNEL_MAP_CB;
+int (*slim_set_channel_map)(struct snd_soc_dai *dai,
+		unsigned int tx_num, unsigned int *tx_slot,
+		unsigned int rx_num, unsigned int *rx_slot)
+			= SLIM_SET_CHANNEL_MAP_CB;
+int (*slim_hw_params)(struct snd_pcm_substream *substream,
+		struct snd_pcm_hw_params *params,
+		struct snd_soc_dai *dai)
+		= SLIM_HW_PARAMS_CB;
+int (*remote_cfg_slim_rx)(int dai_id)	=	REMOTE_CFG_SLIM_RX_CB;
+int (*remote_close_slim_rx)(int dai_id)	=	REMOTE_CLOSE_SLIM_RX_CB;
+int (*remote_cfg_slim_tx)(int dai_id)	=	REMOTE_CFG_SLIM_TX_CB;
+int (*remote_close_slim_tx)(int dai_id)	=	REMOTE_CLOSE_SLIM_TX_CB;
+int (*remote_add_codec_controls)(struct snd_soc_codec *codec)
+		= REMOTE_ADD_CODEC_CONTROLS_CB;
+
+static int tomtom_esxxx_startup(struct snd_pcm_substream *substream,
+			       struct snd_soc_dai *dai)
+{
+	tomtom_startup(substream, dai);
+	return 0;
+}
+
+static void tomtom_esxxx_shutdown(struct snd_pcm_substream *substream,
+				 struct snd_soc_dai *dai)
+{
+	tomtom_shutdown(substream, dai);
+}
+
+static int tomtom_esxxx_hw_params(struct snd_pcm_substream *substream,
+				 struct snd_pcm_hw_params *params,
+				 struct snd_soc_dai *dai)
+{
+	int rc = 0;
+	pr_debug("%s(): dai_name = %s DAI-ID %x rate %d num_ch %d\n", __func__,
+		 dai->name, dai->id, params_rate(params),
+		 params_channels(params));
+
+	rc = tomtom_hw_params(substream, params, dai);
+	if (rc < 0)
+		pr_err("%s: taiko_hw_params error %d\n", __func__, rc);
+
+	if (remote_route_enable(dai))
+		rc = slim_hw_params(substream, params, dai);
+
+	return rc;
+}
+
+static int tomtom_esxxx_set_channel_map(struct snd_soc_dai *dai,
+				       unsigned int tx_num,
+				       unsigned int *tx_slot,
+				       unsigned int rx_num,
+				       unsigned int *rx_slot)
+{
+	unsigned int taiko_tx_num = 0;
+	unsigned int taiko_tx_slot[6];
+	unsigned int taiko_rx_num = 0;
+	unsigned int taiko_rx_slot[6];
+	int rc = 0;
+	pr_debug("%s(): dai_name = %s DAI-ID %x tx_ch %d rx_ch %d\n",
+		 __func__, dai->name, dai->id, tx_num, rx_num);
+
+	if (remote_route_enable(dai)) {
+		rc = tomtom_get_channel_map(dai, &taiko_tx_num, taiko_tx_slot,
+					&taiko_rx_num, taiko_rx_slot);
+		if (rc < 0)
+			pr_err("%s: taiko_get_channel_map error %d\n",
+			       __func__, rc);
+
+		rc = tomtom_set_channel_map(dai, tx_num,
+					taiko_tx_slot, rx_num, taiko_rx_slot);
+		if (rc < 0)
+			pr_err("%s: taiko_set_channel_map error %d\n",
+			       __func__, rc);
+
+		rc = slim_set_channel_map(dai, tx_num, tx_slot, rx_num,
+					rx_slot);
+	} else
+		rc = tomtom_set_channel_map(dai, tx_num,
+					tx_slot, rx_num, rx_slot);
+
+	return rc;
+}
+
+static int tomtom_esxxx_get_channel_map(struct snd_soc_dai *dai,
+				       unsigned int *tx_num,
+				       unsigned int *tx_slot,
+				       unsigned int *rx_num,
+				       unsigned int *rx_slot)
+
+{
+	int rc = 0;
+
+	pr_debug("%s(): dai_name = %s DAI-ID %d tx_ch %d rx_ch %d\n",
+		 __func__, dai->name, dai->id, *tx_num, *rx_num);
+
+	if (remote_route_enable(dai))
+		rc = slim_get_channel_map(dai, tx_num, tx_slot, rx_num,
+					rx_slot);
+	else
+		rc = tomtom_get_channel_map(dai, tx_num, tx_slot,
+					rx_num, rx_slot);
+
+	return rc;
+}
+#endif
+
+#ifdef CONFIG_SND_SOC_ESXXX
+static struct snd_soc_dai_ops tomtom_dai_ops = {
+	.startup = tomtom_esxxx_startup, /* tomtom_startup, */
+	.shutdown = tomtom_esxxx_shutdown, /* tomtom_shutdown, */
+	.hw_params = tomtom_esxxx_hw_params, /* tomtom_hw_params, */
+	.set_sysclk = tomtom_set_dai_sysclk,
+	.set_fmt = tomtom_set_dai_fmt,
+	.set_channel_map = tomtom_esxxx_set_channel_map,
+			/* tomtom_set_channel_map, */
+	.get_channel_map = tomtom_esxxx_get_channel_map,
+			/* tomtom_get_channel_map, */
+};
+#else
 static struct snd_soc_dai_ops tomtom_dai_ops = {
 	.startup = tomtom_startup,
 	.shutdown = tomtom_shutdown,
@@ -5959,6 +6239,7 @@ static struct snd_soc_dai_ops tomtom_dai_ops = {
 	.set_channel_map = tomtom_set_channel_map,
 	.get_channel_map = tomtom_get_channel_map,
 };
+#endif
 
 static struct snd_soc_dai_driver tomtom_dai[] = {
 	{
@@ -6234,11 +6515,22 @@ static int tomtom_codec_enable_slimrx(struct snd_soc_dapm_widget *w,
 		dai->bus_down_in_recovery = false;
 		tomtom_codec_enable_int_port(dai, codec);
 		(void) tomtom_codec_enable_slim_chmask(dai, true);
+#ifdef CONFIG_SND_SOC_ESXXX		
+		if (tomtom_dai[w->shift].id == AIF1_PB || tomtom_dai[w->shift].id == AIF2_PB)	
+			ret = remote_cfg_slim_rx(tomtom_dai[w->shift].id);			
+		if (ret < 0)				
+			pr_err("%s: remote_cfg_slim_rx error:%d",__func__, ret);
+#endif
 		ret = wcd9xxx_cfg_slim_sch_rx(core, &dai->wcd9xxx_ch_list,
 					      dai->rate, dai->bit_width,
 					      &dai->grph);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
+#ifdef CONFIG_SND_SOC_ESXXX		
+		if (tomtom_dai[w->shift].id == AIF1_PB ||
+			tomtom_dai[w->shift].id == AIF2_PB)			
+			ret = remote_close_slim_rx(tomtom_dai[w->shift].id);
+#endif
 		ret = wcd9xxx_close_slim_sch_rx(core, &dai->wcd9xxx_ch_list,
 						dai->grph);
 		if (!dai->bus_down_in_recovery)
@@ -6401,6 +6693,59 @@ static int __tomtom_codec_enable_slimtx(struct snd_soc_codec *codec,
 	return ret;
 }
 
+// Harry
+// This function only for ES704!!!
+static int __tomtom_codec_enable_slimtx_es704(struct snd_soc_codec *codec,
+		int event, struct wcd9xxx_codec_dai_data *dai_data,unsigned char shfit)
+{
+	struct wcd9xxx *core;
+	int ret = 0;
+
+	core = dev_get_drvdata(codec->dev->parent);
+
+	switch (event) {
+	case SND_SOC_DAPM_POST_PMU:
+		dai_data->bus_down_in_recovery = false;
+		tomtom_codec_enable_int_port(dai_data, codec);
+		(void) tomtom_codec_enable_slim_chmask(dai_data, true);
+		ret = wcd9xxx_cfg_slim_sch_tx(core, &dai_data->wcd9xxx_ch_list,
+					      dai_data->rate,
+					      dai_data->bit_width,
+					      &dai_data->grph);
+#ifdef CONFIG_SND_SOC_ESXXX	
+		printk(KERN_ERR"tomtom_dai[w->shift].id = %d\n",tomtom_dai[shfit].id);
+		if (tomtom_dai[shfit].id == AIF1_CAP)			
+			ret = remote_cfg_slim_tx(tomtom_dai[shfit].id);
+#endif
+		break;
+	case SND_SOC_DAPM_POST_PMD:
+#ifdef CONFIG_SND_SOC_ESXXX		
+		printk(KERN_ERR"tomtom_dai[w->shift].id = %d\n",tomtom_dai[shfit].id);
+		if (tomtom_dai[shfit].id == AIF1_CAP)			
+			ret = remote_close_slim_tx(tomtom_dai[shfit].id);
+#endif
+		ret = wcd9xxx_close_slim_sch_tx(core,
+						&dai_data->wcd9xxx_ch_list,
+						dai_data->grph);
+		if (!dai_data->bus_down_in_recovery)
+			ret = tomtom_codec_enable_slim_chmask(dai_data, false);
+		if (ret < 0) {
+			ret = wcd9xxx_disconnect_port(core,
+					&dai_data->wcd9xxx_ch_list,
+					dai_data->grph);
+			dev_dbg(codec->dev,
+				"%s: Disconnect TX port, ret = %d\n",
+				 __func__, ret);
+		}
+
+		dai_data->bus_down_in_recovery = false;
+		break;
+	}
+
+	return ret;
+}
+
+
 /*
  * tomtom_codec_enable_slimtx_mad: Callback function that will be invoked
  *	to setup the slave port for MAD.
@@ -6453,7 +6798,9 @@ static int tomtom_codec_enable_slimtx(struct snd_soc_dapm_widget *w,
 		__func__, w->name, event, w->shift);
 
 	dai = &tomtom_p->dai[w->shift];
-	return __tomtom_codec_enable_slimtx(codec, event, dai);
+	// Change by Harry for ES704
+	// return __tomtom_codec_enable_slimtx(codec, event, dai,w->shift);
+	return __tomtom_codec_enable_slimtx_es704(codec, event, dai,w->shift);
 }
 
 static int tomtom_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
@@ -7497,7 +7844,7 @@ static const struct wcd9xxx_reg_mask_val tomtom_reg_defaults[] = {
 	TOMTOM_REG_VAL(TOMTOM_A_CDC_MAD_INP_SEL, 0x01),
 
 	/* Set HPH Path to low power mode */
-	TOMTOM_REG_VAL(TOMTOM_A_RX_HPH_BIAS_PA, 0x57),
+	TOMTOM_REG_VAL(TOMTOM_A_RX_HPH_BIAS_PA, 0x55),
 
 	/* BUCK default */
 	TOMTOM_REG_VAL(TOMTOM_A_BUCK_CTRL_CCL_4, 0x51),
@@ -8814,7 +9161,16 @@ static int tomtom_codec_probe(struct snd_soc_codec *codec)
 				   ARRAY_SIZE(impedance_detect_controls));
 	snd_soc_add_codec_controls(codec, hph_type_detect_controls,
 				   ARRAY_SIZE(hph_type_detect_controls));
+	
+#ifdef CONFIG_SND_SOC_ESXXX	
+	remote_add_codec_controls(codec);
+#endif
 
+	//
+	// Add by Harry for LM48560
+#ifdef CONFIG_SND_SOC_LM48560
+	(void)revpa_controls_registe(codec);
+#endif
 	control->num_rx_port = TOMTOM_RX_MAX;
 	control->rx_chs = ptr;
 	memcpy(control->rx_chs, tomtom_rx_chs, sizeof(tomtom_rx_chs));
@@ -8849,6 +9205,9 @@ static int tomtom_codec_probe(struct snd_soc_codec *codec)
 		/* Do not fail probe if CPE failed */
 		ret = 0;
 	}
+
+	g_tomtom_codec = codec;
+	
 	return ret;
 
 err_pdata:

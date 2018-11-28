@@ -10,6 +10,11 @@
  * GNU General Public License for more details.
  *
  */
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/03/4 added for oem panel ctrl pin
+#include <linux/init.h>
+#include <linux/string.h>
+#endif //GIGASET_EDIT
 
 #include <linux/module.h>
 #include <linux/interrupt.h>
@@ -37,6 +42,49 @@ static struct dsi_drv_cm_data shared_ctrl_data;
 static int mdss_dsi_pinctrl_set_state(struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 					bool active);
 
+
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/03/4 added for oem panel ctrl pin
+
+enum {
+HX8379A_FWVGA=0,
+JDI_1080P_VID,
+JDI_1080P_CMD_17421,
+JDI_1080P_CMD_17427,
+SHARP_1080P_VDO_17421,
+LCM_ID_UNKNOWN,
+};
+
+int l17_1p8_ldo_en_gpio=0; 
+
+//jowen.li@swdp.system, 2015/07/27 add vdd gpio for 724 DVT
+bool panel_vdd_on=false; 
+
+bool my_gesture_sync_flag=false;
+
+void mdss_dsi_panel_ldo_enable(int enable)
+{
+	//pr_err("[lwj]%s: --enable=%d\n", __func__,enable);
+
+	if (enable) {
+		if (!gpio_is_valid(l17_1p8_ldo_en_gpio))
+			pr_err("%s:%d, 2.7v --> 1.8v ldo enable gpio not specified\n",
+					__func__, __LINE__);
+		else
+		{
+		  gpio_request(l17_1p8_ldo_en_gpio,"1p8ldo_en_gpio");	
+		  gpio_set_value(l17_1p8_ldo_en_gpio, 1);
+		}
+		
+	} else {
+		if (gpio_is_valid(l17_1p8_ldo_en_gpio)) {
+			gpio_set_value((l17_1p8_ldo_en_gpio), 0);
+			gpio_free(l17_1p8_ldo_en_gpio);
+		}
+	}
+
+}
+#endif //GIGASET_EDIT
 static int mdss_dsi_labibb_vreg_init(struct platform_device *pdev)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
@@ -174,6 +222,98 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
 		pr_debug("reset disable: pinctrl not enabled\n");
 
+
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/08/01 match 427 DVT gesture 
+
+	if(my_gesture_sync_flag==false) //normal mode :421 427 
+	{
+		printk("[lwj]--%s--0801--421 && 427 normal\n",__func__);
+
+		if (ctrl_pdata->panel_bias_vreg) {
+			pr_debug("%s: Disabling panel bias vreg. ndx = %d\n",
+			       __func__, ctrl_pdata->ndx);
+			if (mdss_dsi_labibb_vreg_ctrl(ctrl_pdata, false))
+				pr_err("Unable to disable bias vreg\n");
+			/* Add delay recommended by panel specs */
+			udelay(5000); 
+			udelay(5000); 
+			udelay(5000); 
+		}
+
+		//jowen.li@swdp.system, 2015/03/4 added for oem panel ctrl pin
+		mdss_dsi_panel_ldo_enable(0);
+		udelay(4000);	
+
+		for (i = DSI_MAX_PM - 1; i >= 0; i--) {
+			/*
+			 * Core power module will be disabled when the
+			 * clocks are disabled
+			 */
+			if (DSI_CORE_PM == i)
+				continue;
+
+			//jowen.li@swdp.system, 2015/07/27 add vdd gpio for 724 DVT
+			if((device_version>=DEVICE_VERSION_17427_DVT)&&(device_version<=DEVICE_VERSION_17427_MP))	
+			{	
+				//if power on l17 (2.7v-->1.8v lcm vdd) , continue;
+				if(DSI_PANEL_PM == i && panel_vdd_on==true)	
+				continue;
+			}
+
+			ret = msm_dss_enable_vreg(
+				ctrl_pdata->power_data[i].vreg_config,
+				ctrl_pdata->power_data[i].num_vreg, 0);
+			if (ret)
+				pr_err("%s: failed to disable vregs for %s\n",
+					__func__, __mdss_dsi_pm_name(i));
+		}
+	}
+	else	//for 427 DVT gesture .
+	{
+		printk("[lwj]--%s--0801--427 DVT gesture\n",__func__);
+
+		if (ctrl_pdata->panel_bias_vreg) {
+			pr_debug("%s: Disabling panel bias vreg. ndx = %d\n",
+			       __func__, ctrl_pdata->ndx);
+			if (mdss_dsi_labibb_vreg_ctrl(ctrl_pdata, true))
+				pr_err("Unable to disable bias vreg\n");
+			/* Add delay recommended by panel specs */
+			udelay(5000); 
+			udelay(5000); 
+			udelay(5000); 
+		}
+
+		mdss_dsi_panel_ldo_enable(1);
+
+		for (i = DSI_MAX_PM - 1; i >= 0; i--) {
+			/*
+			 * Core power module will be disabled when the
+			 * clocks are disabled
+			 */
+			if (DSI_CORE_PM == i)
+				continue;
+
+			//jowen.li@swdp.system, 2015/07/27 add vdd gpio for 724 DVT
+			if((device_version>=DEVICE_VERSION_17427_DVT)&&(device_version<=DEVICE_VERSION_17427_MP))	
+			{	
+				//if power on l17 (2.7v-->1.8v lcm vdd) , continue;
+				if(DSI_PANEL_PM == i && panel_vdd_on==true)	
+				continue;
+			}
+
+			ret = msm_dss_enable_vreg(
+				ctrl_pdata->power_data[i].vreg_config,
+				ctrl_pdata->power_data[i].num_vreg, 1);
+			if (ret)
+				pr_err("%s: failed to disable vregs for %s\n",
+					__func__, __mdss_dsi_pm_name(i));
+		}
+
+	}
+
+#else //ori
+
 	if (ctrl_pdata->panel_bias_vreg) {
 		pr_debug("%s: Disabling panel bias vreg. ndx = %d\n",
 		       __func__, ctrl_pdata->ndx);
@@ -198,6 +338,8 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 				__func__, __mdss_dsi_pm_name(i));
 	}
 
+#endif //GIGASET_EDIT
+
 end:
 	return ret;
 }
@@ -207,6 +349,10 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 	int ret = 0;
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
 	int i = 0;
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/03/4 added for oem panel ctrl pin
+	mdss_dsi_panel_ldo_enable(1);
+#endif //GIGASET_EDIT
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -223,6 +369,19 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 		 */
 		if (DSI_CORE_PM == i)
 			continue;
+		
+		#ifdef GIGASET_EDIT
+		//jowen.li@swdp.system, 2015/07/27 add vdd gpio for 724 DVT
+		if((device_version>=DEVICE_VERSION_17427_DVT)&&(device_version<=DEVICE_VERSION_17427_MP))	
+		{
+			//if power on l17 (2.7v-->1.8v lcm vdd) ,set flag ture;
+			if(DSI_PANEL_PM == i && panel_vdd_on==true)	
+				continue;
+			else if(DSI_PANEL_PM == i && panel_vdd_on==false)
+				panel_vdd_on=true;
+		}	
+		#endif
+
 		ret = msm_dss_enable_vreg(
 			ctrl_pdata->power_data[i].vreg_config,
 			ctrl_pdata->power_data[i].num_vreg, 1);
@@ -232,13 +391,22 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 			goto error;
 		}
 	}
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/03/4 added for oem panel ctrl pin
+		mdelay(2);
+#endif //GIGASET_EDIT
 	if (ctrl_pdata->panel_bias_vreg) {
 		pr_debug("%s: Enable panel bias vreg. ndx = %d\n",
 		       __func__, ctrl_pdata->ndx);
 		if (mdss_dsi_labibb_vreg_ctrl(ctrl_pdata, true))
 			pr_err("Unable to configure bias vreg\n");
 		/* Add delay recommended by panel specs */
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/03/4 added for oem panel ctrl pin
+		mdelay(5);
+#else
 		udelay(2000);
+#endif //GIGASET_EDIT
 	}
 
 	i--;
@@ -1553,6 +1721,97 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 	return rc;
 }
 
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/04/23 add auto match lcm 
+
+int my_panel_id=0;
+
+int get_panel_id(void)
+{
+	char *p_sub;
+	p_sub=strstr(saved_command_line, "dsi");
+
+	if(p_sub)
+	{
+		pr_err("[lwj] %s",p_sub+11);
+		if (strstr(p_sub, "mdss_dsi_hx8379a_truly_fwvga_video")) {
+			my_panel_id=HX8379A_FWVGA;//0;
+		}
+		else if(strstr(p_sub, "mdss_dsi_jdi_1080p_video")) {
+			my_panel_id=JDI_1080P_VID;//1;
+		}
+		else if(strstr(p_sub, "mdss_dsi_jdi_1080p_cmd_17421")) {
+			my_panel_id=JDI_1080P_CMD_17421;//2;
+		}
+		else if(strstr(p_sub, "mdss_dsi_jdi_1080p_cmd_17427")) {
+			my_panel_id=JDI_1080P_CMD_17427;//3;
+		}
+		else if(strstr(p_sub, "mdss_dsi_sharp_1080p_vdo_17421")){
+			my_panel_id=SHARP_1080P_VDO_17421;//4;
+		}
+		else
+			my_panel_id=LCM_ID_UNKNOWN;//0;	
+	}	
+	else
+		my_panel_id=LCM_ID_UNKNOWN;//0;	
+
+	printk("\n[lwj]--%s--my_panel_id=%d\n",__func__,my_panel_id);
+
+	return my_panel_id;
+}
+
+static struct device_node *mdss_dsi_pref_prim_panel(
+		struct platform_device *pdev)
+{
+	struct device_node *dsi_pan_node = NULL;
+	int panel_id_temp=0;
+	pr_debug("%s:%d: Select primary panel from dt\n",
+					__func__, __LINE__);
+
+	panel_id_temp=get_panel_id();
+	 
+	switch(panel_id_temp)
+	{
+	case HX8379A_FWVGA://0: //hx8379a_fwvga
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-pan-0", 0);
+		break;
+
+	case JDI_1080P_VID://1: //jdi_1080p_vid
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-pan-1", 0);
+		break;
+
+	case JDI_1080P_CMD_17421://2: //jdi_1080p_cmd_17421
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-pan-2", 0);
+		break;
+
+	case JDI_1080P_CMD_17427://3: //jdi_1080p_cmd_17427
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-pan-3", 0);
+		break;
+
+	case SHARP_1080P_VDO_17421://4: //sharp_1080p_vdo_17421
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-pan-4", 0);
+		break;
+
+	default://default boot use video mode lcm  
+		dsi_pan_node = of_parse_phandle(pdev->dev.of_node,
+					"qcom,dsi-pref-prim-pan-0", 0);
+		break;
+	}
+
+	if (!dsi_pan_node)
+		pr_err("%s:can't find panel phandle\n", __func__);
+
+	return dsi_pan_node;
+}
+
+
+#else
+
 static struct device_node *mdss_dsi_pref_prim_panel(
 		struct platform_device *pdev)
 {
@@ -1567,6 +1826,8 @@ static struct device_node *mdss_dsi_pref_prim_panel(
 
 	return dsi_pan_node;
 }
+
+#endif //GIGASET_EDIT
 
 /**
  * mdss_dsi_find_panel_of_node(): find device node of dsi panel
@@ -1672,7 +1933,10 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		pr_err("DSI driver only supports device tree probe\n");
 		return -ENOTSUPP;
 	}
-
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/07/03 add auto match lcm 
+	get_panel_id();
+#endif
 	pan_cfg = util->panel_intf_type(MDSS_PANEL_INTF_HDMI);
 	if (IS_ERR(pan_cfg)) {
 		return PTR_ERR(pan_cfg);
@@ -2059,6 +2323,24 @@ int dsi_panel_device_register(struct device_node *pan_node,
 	 * If disp_en_gpio has been set previously (disp_en_gpio > 0)
 	 *  while parsing the panel node, then do not override it
 	 */
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/02/13 added for oem panel ctrl pin
+	if (l17_1p8_ldo_en_gpio <= 0) {
+		l17_1p8_ldo_en_gpio = of_get_named_gpio(
+			ctrl_pdev->dev.of_node,
+			"qcom,platform_ldoen-gpio", 0);
+
+		if (!gpio_is_valid(l17_1p8_ldo_en_gpio))
+			pr_err("%s:%d, 2.7v --> 1.8v ldo enable gpio not specified\n",
+					__func__, __LINE__);
+		else
+		{
+		gpio_request(l17_1p8_ldo_en_gpio,"1p8ldo_en_gpio");	
+		gpio_set_value(l17_1p8_ldo_en_gpio, 1);
+
+		}
+	}
+#endif //GIGASET_EDIT
 	if (ctrl_pdata->disp_en_gpio <= 0) {
 		ctrl_pdata->disp_en_gpio = of_get_named_gpio(
 			ctrl_pdev->dev.of_node,

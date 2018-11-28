@@ -46,7 +46,13 @@
 							(arr[3] << 24))
 
 /* Module parameter to control power-on-alarm */
+#ifdef GIGASET_EDIT
+//jung.liu@swdp.system, 2015/05/07 added for the RTC enable
+static bool poweron_alarm = 1;
+#else
 static bool poweron_alarm;
+#endif
+
 module_param(poweron_alarm, bool, 0644);
 MODULE_PARM_DESC(poweron_alarm, "Enable/Disable power-on alarm");
 

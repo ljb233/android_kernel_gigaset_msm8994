@@ -236,6 +236,12 @@ struct mmc_host {
 	unsigned int		f_min;
 	unsigned int		f_max;
 	unsigned int		f_init;
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */	
+	unsigned int		irq_counts; /* for test. by Cesc */
+	unsigned int		slot_num;
+	unsigned int		mmc1_identified;
+#endif /*GIGASET_EDIT*/ 	
 	u32			ocr_avail;
 	u32			ocr_avail_sdio;	/* SDIO-specific OCR */
 	u32			ocr_avail_sd;	/* SD-specific OCR */

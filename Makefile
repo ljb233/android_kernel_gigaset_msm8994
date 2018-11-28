@@ -691,6 +691,8 @@ endif
 KBUILD_CPPFLAGS += $(KCPPFLAGS)
 KBUILD_AFLAGS += $(KAFLAGS)
 KBUILD_CFLAGS += $(KCFLAGS)
+#Macro GIGASET_EDIT Gigaset add for further code modification
+KBUILD_CFLAGS += -DGIGASET_EDIT
 
 # Use --build-id when available.
 LDFLAGS_BUILD_ID = $(patsubst -Wl$(comma)%,%,\

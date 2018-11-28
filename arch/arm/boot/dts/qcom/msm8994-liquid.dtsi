@@ -527,9 +527,12 @@
 	};
 };
 
+// Del by harry
+/*
 &pcie0 {
 	vreg-3.3-supply = <&wigig_vreg>;
 };
+*/
 
 &pcie1 {
 	vreg-3.3-supply = <&bt_vreg>;

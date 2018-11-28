@@ -23,6 +23,10 @@
 #include <linux/err.h>
 #include <linux/delay.h>
 #include "../../staging/android/timed_output.h"
+#ifdef GIGASET_EDIT
+/* byron.ran@swdp.driver, 2015/09/09,  add for distinguish 17421 or 17427...*/
+#include <linux/init.h>
+#endif
 
 #define QPNP_IRQ_FLAGS	(IRQF_TRIGGER_RISING | \
 			IRQF_TRIGGER_FALLING | \
@@ -1487,7 +1491,16 @@ static int qpnp_hap_parse_dt(struct qpnp_hap *hap)
 	rc = of_property_read_u32(spmi->dev.of_node,
 			"qcom,vmax-mv", &temp);
 	if (!rc) {
+#ifdef GIGASET_EDIT
+/* byron.ran@swdp.driver, 2015/09/09,  add for distinguish 17421 or 17427...*/
+		if (device_version >= DEVICE_VERSION_17427 && device_version <= DEVICE_VERSION_17427_MP) {
+			hap->vmax_mv = 3000;
+		} else {
+			hap->vmax_mv = temp;
+		}
+#else
 		hap->vmax_mv = temp;
+#endif
 	} else if (rc != -EINVAL) {
 		dev_err(&spmi->dev, "Unable to read vmax\n");
 		return rc;

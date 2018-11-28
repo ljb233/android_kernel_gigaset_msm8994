@@ -52,6 +52,11 @@
 #include <linux/platform_data/qcom-serial_hs_lite.h>
 #include <linux/msm-bus.h>
 #include "msm_serial_hs_hwreg.h"
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/02/12, add for IrRemote */
+#include <linux/regulator/consumer.h>
+#define PINCTRL_DBG
+/* #endif //GIGASET_EDIT */
 
 /*
  * There are 3 different kind of UART Core available on MSM.
@@ -94,6 +99,14 @@ struct msm_hsl_port {
 	u32			bus_perf_client;
 	/* BLSP UART required BUS Scaling data */
 	struct msm_bus_scale_pdata *bus_scale_table;
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/05/08, add for UART pinctrl */
+#ifdef PINCTRL_DBG
+    struct pinctrl          *pinctrl;
+    struct pinctrl_state    *gpio_state_active;
+    struct pinctrl_state    *gpio_state_suspend;
+#endif
+/* #endif //GIGASET_EDIT */
 };
 
 #define UARTDM_VERSION_11_13	0
@@ -155,6 +168,12 @@ static struct of_device_id msm_hsl_match_table[] = {
 	{}
 };
 
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/02/12, add for IrRemote */
+static struct regulator *ir_ldo19;
+static int isGetLdo=0;
+/* #endif //GIGASET_EDIT */
+
 #ifdef CONFIG_SERIAL_MSM_HSL_CONSOLE
 static int get_console_state(struct uart_port *port);
 #else
@@ -215,6 +234,48 @@ static void set_gsbi_uart_func_mode(struct uart_port *port)
 	if (msm_hsl_port->pclk)
 		clk_disable_unprepare(msm_hsl_port->pclk);
 }
+
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/05/08, add for UART pinctrl */
+#ifdef PINCTRL_DBG
+static void msm_serial_hsl_get_pinctrl_config(struct uart_port *port)
+{
+       struct pinctrl_state *set_state;
+       struct msm_hsl_port *msm_hsl_port = UART_TO_MSM(port);
+       pr_err("msm_serial_hsl_get_pinctrl_config start");
+
+       msm_hsl_port->pinctrl = devm_pinctrl_get(port->dev);
+       if (IS_ERR_OR_NULL(msm_hsl_port->pinctrl)) {
+               dev_err(port->dev, "Error getting pinctrl");
+       } else {
+               set_state = pinctrl_lookup_state(msm_hsl_port->pinctrl,
+                                               PINCTRL_STATE_DEFAULT);
+               if (IS_ERR_OR_NULL(set_state)) {
+                       dev_err(port->dev,
+                               "pinctrl lookup failed for default state");
+                       goto pinctrl_fail;
+               }
+
+               msm_hsl_port->gpio_state_active = set_state;
+               pinctrl_select_state(msm_hsl_port->pinctrl,
+                               msm_hsl_port->gpio_state_active);
+               set_state = pinctrl_lookup_state(msm_hsl_port->pinctrl,
+                                               PINCTRL_STATE_SLEEP);
+               if (IS_ERR_OR_NULL(set_state)) {
+                               dev_err(port->dev,
+                                       "pinctrl lookup failed for sleep state");
+                               goto pinctrl_fail;
+               }
+               msm_hsl_port->gpio_state_suspend = set_state;
+               dev_info(port->dev, "Pinctrl configs read");
+               return;
+       }
+pinctrl_fail:
+       msm_hsl_port->pinctrl = NULL;
+       return;
+}
+#endif
+/* #endif //GIGASET_EDIT */
 
 /**
  * msm_hsl_config_uart_tx_rx_gpios - Configures UART Tx and RX GPIOs
@@ -1035,6 +1096,16 @@ static int msm_hsl_startup(struct uart_port *port)
 		goto release_wakelock;
 	}
 
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/02/12, add for IrRemote */
+	if(isGetLdo) {
+		int rc = regulator_enable(ir_ldo19);
+		if (rc) {
+			pr_err("zhengzk regulator_enable ir_ldo19 error.\n");
+		}
+	}
+/* #endif //GIGASET_EDIT */
+
 	return ret;
 
 release_wakelock:
@@ -1066,6 +1137,16 @@ static void msm_hsl_shutdown(struct uart_port *port)
 		if (pdata && pdata->use_pm)
 			wake_unlock(&msm_hsl_port->port_open_wake_lock);
 	}
+
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/02/12, add for IrRemote */
+	if(isGetLdo) {
+		int rc = regulator_disable(ir_ldo19);
+		if (rc) {
+			pr_err("zhengzk regulator_disable ir_ldo19 error.\n");
+		}
+	}
+/* #endif //GIGASET_EDIT */
 }
 
 static void msm_hsl_set_termios(struct uart_port *port,
@@ -1295,6 +1376,24 @@ static void msm_hsl_power(struct uart_port *port, unsigned int state,
 	default:
 		pr_err("Unknown PM state %d\n", state);
 	}
+
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/02/12, add for IrRemote */
+	if(isGetLdo==0){
+		pr_info("zhengzk request LDO19 for IrRemote.\n");
+		ir_ldo19 = regulator_get(port->dev, "qcom,irldo19");
+		if (IS_ERR(ir_ldo19)) {
+			pr_err("zhengzk regulator_get ir_ldo19 error.\n");
+		} else {
+			int rc = regulator_set_voltage(ir_ldo19, 3300000, 3300000);
+			if (rc) {
+				pr_err("zhengzk regulator_set_voltage error.\n");
+			} else {
+				isGetLdo = 1;	//get LDO19 success
+			}
+		}
+	}
+/* #endif //GIGASET_EDIT */
 }
 
 static struct uart_ops msm_hsl_uart_pops = {
@@ -1789,7 +1888,12 @@ static int msm_serial_hsl_probe(struct platform_device *pdev)
 			}
 		}
 	}
-
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/05/08, add for UART pinctrl */
+#ifdef PINCTRL_DBG
+    msm_serial_hsl_get_pinctrl_config(port);
+#endif
+/* #endif //GIGASET_EDIT */
 	gsbi_resource =	platform_get_resource_byname(pdev,
 						     IORESOURCE_MEM,
 						     "gsbi_resource");
@@ -1876,15 +1980,35 @@ static int msm_serial_hsl_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#if 1//#ifdef CONFIG_PM	//by jack.zheng
 static int msm_serial_hsl_suspend(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct uart_port *port;
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/05/08, add for UART pinctrl */
+#ifdef PINCTRL_DBG
+    struct msm_hsl_port *msm_hsl_port;
+#endif
+/* #endif //GIGASET_EDIT */
 	port = get_port_from_line(get_line(pdev));
-
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/05/08, add for UART pinctrl */
+#ifdef PINCTRL_DBG
+    msm_hsl_port = UART_TO_MSM(port);
+#endif
+/* #endif //GIGASET_EDIT */
 	if (port) {
-
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/05/08, add for UART pinctrl */
+#ifdef PINCTRL_DBG
+        if(!is_console(port) && (msm_hsl_port->pinctrl != NULL))
+        {
+            pinctrl_select_state(msm_hsl_port->pinctrl,
+                              msm_hsl_port->gpio_state_suspend);
+        }
+#endif
+/* #endif //GIGASET_EDIT */
 		if (is_console(port))
 			msm_hsl_deinit_clock(port);
 
@@ -1900,16 +2024,37 @@ static int msm_serial_hsl_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct uart_port *port;
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/05/08, add for UART pinctrl */
+#ifdef PINCTRL_DBG
+    struct msm_hsl_port *msm_hsl_port;
+#endif
+/* #endif //GIGASET_EDIT */
 	port = get_port_from_line(get_line(pdev));
-
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/05/08, add for UART pinctrl */
+#ifdef PINCTRL_DBG
+    msm_hsl_port = UART_TO_MSM(port);
+#endif
+/* #endif //GIGASET_EDIT */
 	if (port) {
-
 		uart_resume_port(&msm_hsl_uart_driver, port);
+        
 		if (device_may_wakeup(dev))
 			disable_irq_wake(port->irq);
 
 		if (is_console(port))
 			msm_hsl_init_clock(port);
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/05/08, add for UART pinctrl */
+#ifdef PINCTRL_DBG
+        if(!is_console(port) && (msm_hsl_port->pinctrl != NULL))
+        {
+            pinctrl_select_state(msm_hsl_port->pinctrl,
+                        msm_hsl_port->gpio_state_active);
+        }
+#endif
+/* #endif //GIGASET_EDIT */
 	}
 
 	return 0;

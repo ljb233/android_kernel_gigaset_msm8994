@@ -44,7 +44,15 @@ module_param(record_size, ulong, 0400);
 MODULE_PARM_DESC(record_size,
 		"size of each dump done on oops/panic");
 
+#ifdef GIGASET_EDIT
+//jung.liu added for kernel debug
+static ulong ramoops_console_size = 256*1024UL;
+phys_addr_t ram_console_address_start;
+ssize_t ram_console_address_size;
+#else
 static ulong ramoops_console_size = MIN_MEM_SIZE;
+#endif
+
 module_param_named(console_size, ramoops_console_size, ulong, 0400);
 MODULE_PARM_DESC(console_size, "size of kernel console log");
 

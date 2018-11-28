@@ -413,8 +413,12 @@ static int __cpuinit _cpu_up(unsigned int cpu, int tasks_frozen)
 	ret = __cpu_notify(CPU_UP_PREPARE | mod, hcpu, -1, &nr_calls);
 	if (ret) {
 		nr_calls--;
+		
+#ifndef GIGASET_EDIT
+//jung.liu@swdp.system, 2015/09/02 added for cutting the cpu log
 		printk(KERN_WARNING "%s: attempt to bring up CPU %u failed\n",
 				__func__, cpu);
+#endif//GIGASET_EDIT
 		goto out_notify;
 	}
 

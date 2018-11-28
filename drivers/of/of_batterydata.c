@@ -333,6 +333,11 @@ struct device_node *of_batterydata_get_best_profile(
 
 	batt_id_kohm = ret.intval / 1000;
 
+#ifdef GIGASET_EDIT
+/* byron.ran@swdp.driver, 2015/05/19, add for debug */
+	pr_info("The batt_id_kohm = %d\n", batt_id_kohm);
+#endif
+
 	/* read battery id range percentage for best profile */
 	rc = of_property_read_u32(batterydata_container_node,
 			"qcom,batt-id-range-pct", &id_range_pct);

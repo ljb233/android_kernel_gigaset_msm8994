@@ -72,6 +72,28 @@
 #define BLANK_FLAG_LP	FB_BLANK_VSYNC_SUSPEND
 #define BLANK_FLAG_ULP	FB_BLANK_NORMAL
 
+
+#ifndef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/09/15 added for bl ctrl
+
+static int wled_lev[257]={
+0,45,45,45,46,46,47,47,48,48,
+49,49,50,50,51,51,52,52,53,53,54,54,55,55,56,56,57,57,58,58,
+59,59,60,60,61,61,62,62,63,63,64,64,65,65,66,66,67,67,68,68,
+69,69,70,70,71,71,72,72,73,74,74,75,76,77,78,85,93,99,105,110,
+115,122,128,133,138,142,146,150,152,154,156,157,158,159,160,161,162,163,164,165,
+169,171,173,175,177,179,181,184,188,193,198,202,207,212,217,222,227,233,238,244,
+249,255,261,276,273,280,286,293,299,306,313,320,327,335,342,350,358,366,374,382,
+391,400,408,417,427,436,446,455,465,476,486,497,508,519,530,541,553,565,577,590,
+603,616,629,642,656,670,685,699,714,730,745,761,777,794,811,828,846,864,882,901,
+920,939,959,979,1000,1021,1043,1065,1087,1110,1133,1157,1182,1206,1232,1258,1284,1311,1338,1366,
+1395,1424,1454,1484,1515,1547,1579,1612,1646,1680,1715,1750,1787,1824,1862,1901,1940,1980,2022,2064,
+2106,2150,2195,2240,2287,2334,2382,2432,2482,2533,2586,2639,2694,2749,2806,2864,2923,2984,3045,3108,
+3172,3238,3304,3372,3442,3465,3485,3505,3515,3525,3535,3545,3555,3565,3575,3585,3595,3605,3615,3625,
+3635,3645,3655,3665,3675,3685
+};
+#endif
+
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
 
@@ -242,12 +264,24 @@ static int mdss_fb_notify_update(struct msm_fb_data_type *mfd,
 }
 
 static int lcd_backlight_registered;
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/02/13 added for oem panel bl ctrl
+int bl_delay_flag=1;
+#endif //GIGASET_EDIT
 
 static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 				      enum led_brightness value)
 {
 	struct msm_fb_data_type *mfd = dev_get_drvdata(led_cdev->dev->parent);
 	int bl_lvl;
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/02/13 added for oem panel bl ctrl
+	if(bl_delay_flag!=0)
+	{
+		msleep(120);
+		bl_delay_flag=0;
+	}
+#endif //GIGASET_EDIT
 
 	if (mfd->boot_notification_led) {
 		led_trigger_event(mfd->boot_notification_led, 0);
@@ -1136,6 +1170,10 @@ exit:
 static int mdss_fb_resume_sub(struct msm_fb_data_type *mfd)
 {
 	int ret = 0;
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/02/13 added for oem panel bl ctrl
+	bl_delay_flag=11;
+#endif //GIGASET_EDIT
 
 	if ((!mfd) || (mfd->key != MFD_KEY))
 		return 0;

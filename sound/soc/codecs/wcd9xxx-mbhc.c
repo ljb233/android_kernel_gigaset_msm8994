@@ -58,20 +58,20 @@
 #define FAKE_INS_LOW 10
 #define FAKE_INS_HIGH 80
 #define FAKE_INS_HIGH_NO_SWCH 150
-#define FAKE_REMOVAL_MIN_PERIOD_MS 50
+#define FAKE_REMOVAL_MIN_PERIOD_MS /*50*/100
 #define FAKE_INS_DELTA_SCALED_MV 300
 
 #define BUTTON_MIN 0x8000
 #define STATUS_REL_DETECTION 0x0C
 
-#define HS_DETECT_PLUG_TIME_MS (5 * 1000)
+#define HS_DETECT_PLUG_TIME_MS (/*5*/3 * 1000)
 #define ANC_HPH_DETECT_PLUG_TIME_MS (5 * 1000)
 #define HS_DETECT_PLUG_INERVAL_MS 100
 #define SWCH_REL_DEBOUNCE_TIME_MS 50
 #define SWCH_IRQ_DEBOUNCE_TIME_US 5000
 #define BTN_RELEASE_DEBOUNCE_TIME_MS 25
 
-#define GND_MIC_SWAP_THRESHOLD 2
+#define GND_MIC_SWAP_THRESHOLD /*2*/4
 #define OCP_ATTEMPT 1
 
 #define FW_READ_ATTEMPTS 15
@@ -107,7 +107,14 @@
  * of plug type with current source
  */
 #define WCD9XXX_CS_MEAS_INVALD_RANGE_LOW_MV 160
+#ifdef GIGASET_EDIT
+/*
+ * 2015/3/18 frank fix XIAOMI headset detection issue
+ */
+#define WCD9XXX_CS_MEAS_INVALD_RANGE_HIGH_MV 200
+#else
 #define WCD9XXX_CS_MEAS_INVALD_RANGE_HIGH_MV 265
+#endif
 
 /*
  * Threshold used to detect euro headset
@@ -127,7 +134,7 @@
 #define WCD9XXX_WG_TIME_FACTOR_US	240
 
 #define WCD9XXX_V_CS_HS_MAX 500
-#define WCD9XXX_V_CS_NO_MIC 5
+#define WCD9XXX_V_CS_NO_MIC 10/*5*/ // < 10 headphone, > 10 headset
 #define WCD9XXX_MB_MEAS_DELTA_MAX_MV 80
 #define WCD9XXX_CS_MEAS_DELTA_MAX_MV 12
 
@@ -140,8 +147,40 @@
 #define WCD9XXX_IS_IN_ZDET_ZONE_3(x) (x > WCD9XXX_ZDET_ZONE_2 ? 1 : 0)
 #define WCD9XXX_BOX_CAR_AVRG_MIN 1
 #define WCD9XXX_BOX_CAR_AVRG_MAX 10
+#ifdef GIGASET_EDIT
+#define WCD9XXX_IMPEDANCE_DETECT_THRESHOLD 4
+/*
+ * GIGASET headset L/R: 52 ohm, MEIZU headset L/R: 157 ohm
+ * >200, OMTP headset plug in, e.g 234 ohm for OPPO OMTP headset
+ */
+#define WCD9XXX_OMTP_HEADSET_IMPEDANCE 200
+#define WCD9XXX_OMTP_HEADSET_IMPEDANCE_MAX 2000
+#define HS_PLUG_TYPE_CHECK_MS 100
+#endif
 
 static int impedance_detect_en;
+/* frank, 2015/05/04, using to control switch */
+#ifdef GIGASET_EDIT
+struct switch_control {
+		int swi_pwr;
+		int swi_mute;
+		int swi_sel;
+		int gpio94; /* use to control MOSFET for OMTP headset detect */
+		int gpio94_data;
+};
+struct switch_control share2mbhc = {0};
+EXPORT_SYMBOL(share2mbhc);
+
+/*
+ * using for FTM mode, flag for plug type
+ * 0: plug none, 1: CTIA headset, 2: OMTP headset, 3: 3 pole headphone
+ */
+#define CTIA_HEADSET 1
+#define OMTP_HEADSET 2
+#define THREE_POLE_HP 3
+char inserted_plug_type = PLUG_TYPE_NONE;
+#endif
+
 module_param(impedance_detect_en, int,
 			S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(impedance_detect_en, "enable/disable impedance detect");
@@ -211,6 +250,31 @@ static void wcd9xxx_mbhc_calc_thres(struct wcd9xxx_mbhc *mbhc);
 static u16 wcd9xxx_codec_v_sta_dce(struct wcd9xxx_mbhc *mbhc,
 				   enum meas_type dce, s16 vin_mv,
 				   bool cs_enable);
+
+#ifdef GIGASET_EDIT
+/* get the type of plug in */
+static int plug_type_debug_open(struct inode *inode, struct file *file)
+{
+        file->private_data = inode->i_private;
+        return 0;
+}
+
+ssize_t plug_type_debug_read(struct file *file, char __user *buf,
+                              size_t count, loff_t *pos)
+{
+	int i;
+	const int size = 3;
+	char buffer[size];
+
+	i = scnprintf(buffer, size, "%d\n", inserted_plug_type);
+    return simple_read_from_buffer(buf, count, pos, buffer, i);
+}
+
+static const struct file_operations plug_type_debug_ops = {
+    .open = plug_type_debug_open,
+    .read = plug_type_debug_read,
+};
+#endif
 
 static bool wcd9xxx_mbhc_polling(struct wcd9xxx_mbhc *mbhc)
 {
@@ -847,10 +911,13 @@ static void wcd9xxx_insert_detect_setup(struct wcd9xxx_mbhc *mbhc, bool ins)
 static void wcd9xxx_report_plug(struct wcd9xxx_mbhc *mbhc, int insertion,
 				enum snd_jack_types jack_type)
 {
+#ifdef GIGASET_EDIT
+	int16_t i = 0;
+#endif
 	WCD9XXX_BCL_ASSERT_LOCKED(mbhc->resmgr);
 
-	pr_debug("%s: enter insertion %d hph_status %x\n",
-		 __func__, insertion, mbhc->hph_status);
+	pr_debug("%s: enter insertion %d jack_type %d hph_status %x\n",
+		 __func__, insertion, jack_type, mbhc->hph_status);
 	if (!insertion) {
 		/* Report removal */
 		mbhc->hph_status &= ~jack_type;
@@ -947,9 +1014,36 @@ static void wcd9xxx_report_plug(struct wcd9xxx_mbhc *mbhc, int insertion,
 						mbhc->mbhc_cfg->micbias);
 		}
 
-		if (mbhc->impedance_detect && impedance_detect_en)
+#ifndef GIGASET_EDIT
+		if (mbhc->impedance_detect && impedance_detect_en) {
 			wcd9xxx_detect_impedance(mbhc, &mbhc->zl, &mbhc->zr);
+		}
+#else
+		/* frank, 2015/05/04, switch to no hifi for impedence detection */
+		// power on
+		(void)gpio_direction_output(share2mbhc.swi_pwr, 1);
+		// unmute
+		(void)gpio_direction_output(share2mbhc.swi_mute, 0);
+		// switch to NO HIFI
+		(void)gpio_direction_output(share2mbhc.swi_sel, 1);
+		usleep_range(5000, 5000 + 2000); /*waiting for GPIO stability */
+		wcd9xxx_detect_impedance(mbhc, &mbhc->zl, &mbhc->zr);
 
+		while (((mbhc->zl)/1000 > WCD9XXX_OMTP_HEADSET_IMPEDANCE || 
+				(mbhc->zr)/1000 > WCD9XXX_OMTP_HEADSET_IMPEDANCE) && 
+				i < WCD9XXX_IMPEDANCE_DETECT_THRESHOLD) {
+			/* frank, 2015/05/04, switch to no hifi for impedence detection */
+			// power on
+			(void)gpio_direction_output(share2mbhc.swi_pwr, 1);
+			// unmute
+			(void)gpio_direction_output(share2mbhc.swi_mute, 0);
+			// switch to NO HIFI
+			(void)gpio_direction_output(share2mbhc.swi_sel, 1);
+			usleep_range(5000, 5000 + 2000); /*waiting for GPIO stability */
+			wcd9xxx_detect_impedance(mbhc, &mbhc->zl, &mbhc->zr);
+			i++;
+		}
+#endif
 		pr_debug("%s: Reporting insertion %d(%x)\n", __func__,
 			 jack_type, mbhc->hph_status);
 		wcd9xxx_jack_report(mbhc, &mbhc->headset_jack,
@@ -2431,6 +2525,9 @@ static void wcd9xxx_find_plug_and_report(struct wcd9xxx_mbhc *mbhc,
 static void wcd9xxx_mbhc_decide_swch_plug(struct wcd9xxx_mbhc *mbhc)
 {
 	enum wcd9xxx_mbhc_plug_type plug_type;
+#ifdef GIGASET_EDIT
+	enum wcd9xxx_mbhc_plug_type new_plug_type;
+#endif
 	bool current_source_enable;
 
 	pr_debug("%s: enter\n", __func__);
@@ -2448,6 +2545,17 @@ static void wcd9xxx_mbhc_decide_swch_plug(struct wcd9xxx_mbhc *mbhc)
 		wcd9xxx_turn_onoff_current_source(mbhc, &mbhc->mbhc_bias_regs,
 						  true, false);
 		plug_type = wcd9xxx_codec_cs_get_plug_type(mbhc, false);
+#ifdef GIGASET_EDIT
+		if (plug_type == PLUG_TYPE_HEADSET) {
+			msleep(HS_PLUG_TYPE_CHECK_MS);
+			new_plug_type = wcd9xxx_codec_cs_get_plug_type(mbhc, false);
+
+			if (new_plug_type != plug_type)
+				plug_type = wcd9xxx_codec_cs_get_plug_type(mbhc, false);
+			pr_debug("%s: After check 2 times, plug type %d\n",
+				 __func__, plug_type);
+		}
+#endif
 		/*
 		 * For other plug types, the current source disable
 		 * will be done from wcd9xxx_correct_swch_plug
@@ -2473,12 +2581,13 @@ static void wcd9xxx_mbhc_decide_swch_plug(struct wcd9xxx_mbhc *mbhc)
 		return;
 	}
 
-	if (plug_type == PLUG_TYPE_INVALID ||
-	    plug_type == PLUG_TYPE_GND_MIC_SWAP) {
+	if (plug_type == PLUG_TYPE_INVALID/* ||
+	    plug_type == PLUG_TYPE_GND_MIC_SWAP*/) {
 		wcd9xxx_cleanup_hs_polling(mbhc);
 		wcd9xxx_schedule_hs_detect_plug(mbhc,
 						&mbhc->correct_plug_swch);
-	} else if (plug_type == PLUG_TYPE_HEADPHONE) {
+	} else if (plug_type == PLUG_TYPE_HEADPHONE ||
+		plug_type == PLUG_TYPE_GND_MIC_SWAP) {
 		wcd9xxx_report_plug(mbhc, 1, SND_JACK_HEADPHONE);
 		wcd9xxx_cleanup_hs_polling(mbhc);
 		wcd9xxx_schedule_hs_detect_plug(mbhc,
@@ -2491,6 +2600,25 @@ static void wcd9xxx_mbhc_decide_swch_plug(struct wcd9xxx_mbhc *mbhc)
 		pr_debug("%s: Valid plug found, determine plug type %d\n",
 			 __func__, plug_type);
 		wcd9xxx_find_plug_and_report(mbhc, plug_type);
+		/* sometimes GND_MIC_SWAP will be reported as HS, */
+#ifdef GIGASET_EDIT
+		if (((mbhc->zl)/1000 > WCD9XXX_OMTP_HEADSET_IMPEDANCE || 
+			(mbhc->zr)/1000 > WCD9XXX_OMTP_HEADSET_IMPEDANCE) && 
+			((mbhc->zl)/1000 < WCD9XXX_OMTP_HEADSET_IMPEDANCE_MAX || 
+			(mbhc->zr)/1000 < WCD9XXX_OMTP_HEADSET_IMPEDANCE_MAX)) {
+			pr_debug("%s: OMTP headset plug in\n", __func__);
+			pr_debug("%s: Pull up GPIO94\n", __func__);
+			(void)gpio_direction_output(share2mbhc.gpio94, 1);
+			share2mbhc.gpio94_data = 1;
+			wcd9xxx_report_plug(mbhc, 0,
+							SND_JACK_HEADSET);
+			wcd9xxx_report_plug(mbhc, 1,
+							SND_JACK_HEADPHONE);
+			inserted_plug_type = OMTP_HEADSET; /* OMTP headset plug in */
+		} else {
+			inserted_plug_type = CTIA_HEADSET; /* CTIA headset plug in */
+		}
+#endif /* Do not operate the MOSFET frequently */
 	}
 	pr_debug("%s: leave\n", __func__);
 }
@@ -2667,7 +2795,8 @@ static bool wcd9xxx_hs_remove_settle(struct wcd9xxx_mbhc *mbhc)
 static void wcd9xxx_hs_remove_irq_swch(struct wcd9xxx_mbhc *mbhc)
 {
 	pr_debug("%s: enter\n", __func__);
-	if (wcd9xxx_hs_remove_settle(mbhc))
+	if ((mbhc->current_plug == PLUG_TYPE_HEADSET) || 
+		wcd9xxx_hs_remove_settle(mbhc))
 		wcd9xxx_start_hs_polling(mbhc);
 	pr_debug("%s: leave\n", __func__);
 }
@@ -3107,16 +3236,29 @@ static inline void wcd9xxx_handle_gnd_mic_swap(struct wcd9xxx_mbhc *mbhc,
 		 */
 		WCD9XXX_BCL_LOCK(mbhc->resmgr);
 		if (!mbhc->mbhc_cfg->detect_extn_cable) {
+#ifndef GIGASET_EDIT
 			if (mbhc->current_plug == PLUG_TYPE_HEADPHONE)
 				wcd9xxx_report_plug(mbhc, 0,
 						    SND_JACK_HEADPHONE);
 			else if (mbhc->current_plug == PLUG_TYPE_HEADSET)
 				wcd9xxx_report_plug(mbhc, 0,
 						    SND_JACK_HEADSET);
+#else
+			if (mbhc->current_plug == PLUG_TYPE_HEADSET)
+				wcd9xxx_report_plug(mbhc, 0,
+						    SND_JACK_HEADSET);
+#endif
 		}
+#ifndef GIGASET_EDIT
 		if (mbhc->current_plug != plug_type)
 			wcd9xxx_report_plug(mbhc, 1,
 					SND_JACK_UNSUPPORTED);
+#else
+		if ((mbhc->current_plug != plug_type) && 
+			(mbhc->current_plug == PLUG_TYPE_NONE))
+			wcd9xxx_report_plug(mbhc, 1,
+					SND_JACK_HEADPHONE); /* GND_MIC_SWAP reported as HP */
+#endif
 		WCD9XXX_BCL_UNLOCK(mbhc->resmgr);
 	}
 }
@@ -3168,7 +3310,8 @@ static void wcd9xxx_correct_swch_plug(struct work_struct *work)
 	while (!time_after(jiffies, timeout)) {
 		++retry;
 		rmb();
-		if (mbhc->hs_detect_work_stop) {
+		if ((plug_type == PLUG_TYPE_HEADSET) && 
+			(mbhc->hs_detect_work_stop)) {
 			wrk_complete = false;
 			pr_debug("%s: stop requested\n", __func__);
 			break;
@@ -3309,6 +3452,41 @@ static void wcd9xxx_correct_swch_plug(struct work_struct *work)
 		}
 		WCD9XXX_BCL_UNLOCK(mbhc->resmgr);
 	}
+
+#ifdef GIGASET_EDIT
+	if (mbhc->current_plug == PLUG_TYPE_HEADSET) {
+		if (((mbhc->zl)/1000 > WCD9XXX_OMTP_HEADSET_IMPEDANCE || 
+			(mbhc->zr)/1000 > WCD9XXX_OMTP_HEADSET_IMPEDANCE) && 
+			((mbhc->zl)/1000 < WCD9XXX_OMTP_HEADSET_IMPEDANCE_MAX || 
+			(mbhc->zr)/1000 < WCD9XXX_OMTP_HEADSET_IMPEDANCE_MAX)) {
+			pr_debug("%s: OMTP headset plug in\n", __func__);
+			pr_debug("%s: Pull up GPIO94\n", __func__);
+			(void)gpio_direction_output(share2mbhc.gpio94, 1);
+			share2mbhc.gpio94_data = 1;
+			wcd9xxx_report_plug(mbhc, 0,
+							SND_JACK_HEADSET);
+			wcd9xxx_report_plug(mbhc, 1,
+							SND_JACK_HEADPHONE);
+			inserted_plug_type = OMTP_HEADSET; /* OMTP headset plug in */
+		} else {
+			inserted_plug_type = CTIA_HEADSET; /* CTIA headset plug in */
+		}
+	}
+	else {
+		pr_debug("%s: Pull up GPIO94\n", __func__);
+		(void)gpio_direction_output(share2mbhc.gpio94, 1);
+		share2mbhc.gpio94_data = 1;
+
+		if ((mbhc->zl)/1000 > WCD9XXX_OMTP_HEADSET_IMPEDANCE || 
+			(mbhc->zr)/1000 > WCD9XXX_OMTP_HEADSET_IMPEDANCE) {
+			pr_debug("%s: OMTP headset plug in\n", __func__);
+			inserted_plug_type = OMTP_HEADSET; /* OMTP headset plug in */
+		} else {
+			inserted_plug_type = THREE_POLE_HP; /* headphone plug in */
+		}
+	}
+#endif /* Do not operate the MOSFET frequently */
+
 	pr_debug("%s: leave current_plug(%d)\n", __func__, mbhc->current_plug);
 	/* unlock sleep */
 	wcd9xxx_unlock_sleep(mbhc->resmgr->core_res);
@@ -3336,8 +3514,8 @@ static void wcd9xxx_swch_irq_handler(struct wcd9xxx_mbhc *mbhc)
 	insert = !wcd9xxx_swch_level_remove(mbhc);
 	pr_debug("%s: Current plug type %d, insert %d\n", __func__,
 		 mbhc->current_plug, insert);
-	if ((mbhc->current_plug == PLUG_TYPE_NONE) && insert) {
 
+	if ((mbhc->current_plug == PLUG_TYPE_NONE) && insert) {
 		mbhc->lpi_enabled = false;
 		wmb();
 		/* cancel detect plug */
@@ -3414,6 +3592,15 @@ static void wcd9xxx_swch_irq_handler(struct wcd9xxx_mbhc *mbhc)
 			/* Turn off override */
 			wcd9xxx_turn_onoff_override(mbhc, false);
 		}
+
+#ifdef GIGASET_EDIT
+		/* init MOSFET control GPIO */
+		pr_debug("%s: Pull down GPIO94\n", __func__);
+		(void)gpio_direction_output(share2mbhc.gpio94, 0);
+		share2mbhc.gpio94_data = 0;
+		inserted_plug_type = PLUG_TYPE_NONE; /*plug none */
+#endif
+
 	}
 exit:
 	mbhc->in_swch_irq_handler = false;
@@ -4519,6 +4706,11 @@ static void wcd9xxx_init_debugfs(struct wcd9xxx_mbhc *mbhc)
 	mbhc->debugfs_mbhc =
 	    debugfs_create_file("wcd9xxx_mbhc", S_IFREG | S_IRUGO,
 				NULL, mbhc, &mbhc_debug_ops);
+#ifdef GIGASET_EDIT
+	mbhc->debugfs_plug_type =
+		debugfs_create_file("plug_type", S_IFREG | S_IRUGO, 
+			NULL, mbhc, &plug_type_debug_ops);
+#endif
 }
 
 static void wcd9xxx_cleanup_debugfs(struct wcd9xxx_mbhc *mbhc)
@@ -5133,7 +5325,7 @@ static int wcd9xxx_detect_impedance(struct wcd9xxx_mbhc *mbhc, uint32_t *zl,
 	u32 zl_diff_1, zl_diff_2;
 	bool override_en;
 	struct snd_soc_codec *codec = mbhc->codec;
-	const int mux_wait_us = 25;
+	const int mux_wait_us = 50/*25*/;
 	const struct wcd9xxx_reg_mask_val reg_set_mux[] = {
 		/* Phase 1 */
 		/* Set MBHC_MUX for HPHL without ical */
@@ -5432,26 +5624,25 @@ int wcd9xxx_mbhc_init(struct wcd9xxx_mbhc *mbhc, struct wcd9xxx_resmgr *resmgr,
 			return ret;
 		}
 
-#ifdef CONFIG_MACH_PM9X
+#ifdef GIGASET_EDIT
 		ret = snd_jack_set_key(mbhc->button_jack.jack,
-				       SND_JACK_BTN_5,
+				       SND_JACK_BTN_1,
 				       KEY_VOLUMEUP);
 		if (ret) {
-			pr_err("%s: Failed to set code for btn-5\n",
+			pr_err("%s: Failed to set code for btn-1\n",
 				__func__);
 			return ret;
 		}
 
 		ret = snd_jack_set_key(mbhc->button_jack.jack,
-				       SND_JACK_BTN_7,
+				       SND_JACK_BTN_2,
 				       KEY_VOLUMEDOWN);
 		if (ret) {
-			pr_err("%s: Failed to set code for btn-7\n",
+			pr_err("%s: Failed to set code for btn-2\n",
 				__func__);
 			return ret;
 		}
 #endif
-
 		INIT_DELAYED_WORK(&mbhc->mbhc_firmware_dwork,
 				  wcd9xxx_mbhc_fw_read);
 		INIT_DELAYED_WORK(&mbhc->mbhc_btn_dwork, wcd9xxx_btn_lpress_fn);
@@ -5539,6 +5730,12 @@ int wcd9xxx_mbhc_init(struct wcd9xxx_mbhc *mbhc, struct wcd9xxx_resmgr *resmgr,
 
 	wcd9xxx_regmgr_cond_register(resmgr, 1 << WCD9XXX_COND_HPH_MIC |
 					     1 << WCD9XXX_COND_HPH);
+#ifdef GIGASET_EDIT
+	/* control gpio94 to low in next HW verison */
+	pr_debug("%s: Pull down GPIO94\n", __func__);
+	(void)gpio_direction_output(share2mbhc.gpio94, 0);
+	share2mbhc.gpio94_data = 0;
+#endif
 
 	pr_debug("%s: leave ret %d\n", __func__, ret);
 	return ret;

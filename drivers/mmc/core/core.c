@@ -3426,8 +3426,23 @@ void mmc_rescan(struct work_struct *work)
 
 	mmc_rpm_hold(host, &host->class_dev);
 	mmc_claim_host(host);
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */	
+	if (!mmc_rescan_try_freq(host, host->f_min)) {
+		if ( host->slot_num == 1 ) {
+			host->mmc1_identified = 1;
+		}
+		extend_wakelock = true;
+	} else {
+		if ( host->slot_num == 1 ) {
+                        host->mmc1_identified = 0;
+                }
+
+	}
+#else  		
 	if (!mmc_rescan_try_freq(host, host->f_min))
 		extend_wakelock = true;
+#endif /*GIGASET_EDIT*/ 
 	mmc_release_host(host);
 	mmc_rpm_release(host, &host->class_dev);
  out:

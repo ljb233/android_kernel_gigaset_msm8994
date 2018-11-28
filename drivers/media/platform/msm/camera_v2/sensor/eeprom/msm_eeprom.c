@@ -296,33 +296,63 @@ static int read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
 			rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
 				&(e_ctrl->i2c_client), emap[j].page.addr,
 				emap[j].page.data, emap[j].page.data_t);
+#ifndef GIGASET_EDIT
+//carson.wan@gigasetdigital.com,2015/06/03,add for optimizing the eerpom probing process
 				msleep(emap[j].page.delay);
 			if (rc < 0) {
 				pr_err("%s: page write failed\n", __func__);
 				return rc;
 			}
+#else
+			if (rc < 0) {
+				pr_err("%s: page write failed\n", __func__);
+				return rc;
+			}
+			if (emap[j].page.delay > 0)
+				msleep(emap[j].page.delay);
+#endif
 		}
 		if (emap[j].pageen.valid_size) {
 			e_ctrl->i2c_client.addr_type = emap[j].pageen.addr_t;
 			rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
 				&(e_ctrl->i2c_client), emap[j].pageen.addr,
 				emap[j].pageen.data, emap[j].pageen.data_t);
+#ifndef GIGASET_EDIT
+//carson.wan@gigasetdigital.com,2015/06/03,add for optimizing the eerpom probing process
 				msleep(emap[j].pageen.delay);
 			if (rc < 0) {
 				pr_err("%s: page enable failed\n", __func__);
 				return rc;
 			}
+#else
+			if (rc < 0) {
+				pr_err("%s: page enable failed\n", __func__);
+				return rc;
+			}
+			if (emap[j].pageen.delay > 0)
+			 msleep(emap[j].pageen.delay);
+#endif
 		}
 		if (emap[j].poll.valid_size) {
 			e_ctrl->i2c_client.addr_type = emap[j].poll.addr_t;
 			rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_poll(
 				&(e_ctrl->i2c_client), emap[j].poll.addr,
 				emap[j].poll.data, emap[j].poll.data_t);
+#ifndef GIGASET_EDIT
+//carson.wan@gigasetdigital.com,2015/06/03,add for optimizing the eerpom probing process
 				msleep(emap[j].poll.delay);
 			if (rc < 0) {
 				pr_err("%s: poll failed\n", __func__);
 				return rc;
 			}
+#else
+			if (rc < 0) {
+				pr_err("%s: poll failed\n", __func__);
+				return rc;
+			}
+			if (emap[j].poll.delay > 0)
+				msleep(emap[j].poll.delay);
+#endif
 		}
 
 		if (emap[j].mem.valid_size) {
@@ -395,7 +425,12 @@ static int msm_eeprom_parse_memory_map(struct device_node *of,
 		rc = of_property_read_u32_array(of, property,
 			(uint32_t *) &map[i].pageen, count);
 		if (rc < 0)
+#ifndef GIGASET_EDIT
+//carson.wan@gigasetdigital.com,2015/06/03,add for optimizing the eerpom probing process
+			pr_err("%s: pageen not needed\n", __func__);
+#else
 			CDBG("%s: pageen not needed\n", __func__);
+#endif
 
 		snprintf(property, PROPERTY_MAXSIZE, "qcom,saddr%d", i);
 		rc = of_property_read_u32_array(of, property,
@@ -514,7 +549,11 @@ static int msm_eeprom_get_dt_data(struct msm_eeprom_ctrl_t *e_ctrl)
 		&e_ctrl->eboard_info->power_info;
 	struct device_node *of_node = NULL;
 	struct msm_camera_gpio_conf *gconf = NULL;
+#ifndef GIGASET_EDIT // davis.xu change this for dts parse bug. 20150428
 	uint16_t gpio_array_size = 0;
+#else
+	int16_t gpio_array_size = 0;
+#endif
 	uint16_t *gpio_array = NULL;
 
 	eb_info = e_ctrl->eboard_info;
@@ -551,7 +590,11 @@ static int msm_eeprom_get_dt_data(struct msm_eeprom_ctrl_t *e_ctrl)
 	gpio_array_size = of_gpio_count(of_node);
 	CDBG("%s gpio count %d\n", __func__, gpio_array_size);
 
+#ifndef GIGASET_EDIT // davis.xu change this for dts parse bug. 20150428
 	if (gpio_array_size) {
+#else
+	if (gpio_array_size > 0) {
+#endif
 		gpio_array = kzalloc(sizeof(uint16_t) * gpio_array_size,
 			GFP_KERNEL);
 		if (!gpio_array) {

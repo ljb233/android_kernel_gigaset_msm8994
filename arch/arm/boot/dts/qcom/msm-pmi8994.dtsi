@@ -184,13 +184,20 @@
 			#size-cells = <1>;
 
 			qcom,iterm-ma = <100>;
-			qcom,fastchg-current-ma = <2000>;
+			/* #ifdef GIGASET_EDIT */
+			/* byron.ran@swdp.driver, 2015/04/30, modify the charge current from 2000 to 3000 */
+			qcom,fastchg-current-ma = <3000>;
 			qcom,float-voltage-mv = <4350>;
-			qcom,resume-delta-mv = <200>;
+			qcom,resume-delta-mv = <50>;
 			qcom,chg-inhibit-fg;
 			qcom,dc-psy-type = "Mains";
 			qcom,dc-psy-ma = <1500>;
 			qcom,rparasitic-uohm = <100000>;
+			/* #ifdef GIGASET_EDIT */
+			/* byron.ran@swdp.driver, 2015/06/13, add the parameters for JEITA */
+			qcom,fastchg-current-comp = <250>;
+			qcom,float-voltage-comp = <8>;
+			/* #endif */
 			qcom,bms-psy-name = "bms";
 			qcom,thermal-mitigation = <1500 700 600 0>;
 			qcom,parallel-usb-min-current-ma = <1400>;
@@ -295,11 +302,16 @@
 			compatible = "qcom,qpnp-fg";
 			#address-cells = <1>;
 			#size-cells = <1>;
-			qcom,resume-soc = <95>;
+			/* #ifdef GIGASET_EDIT */
+			/* byron.ran@swdp.driver, 2015/06/16, modify the recharge percent */
+			qcom,resume-soc = <99>;
+			/* #endif */
 			status = "okay";
 			qcom,bcl-lm-threshold-ma = <127>;
 			qcom,bcl-mh-threshold-ma = <405>;
-			qcom,fg-iterm-ma = <100>;
+			/* #ifdef GIGASET_EDIT */
+			/* byron.ran@swdp.driver, 2015/04/30, modify the iterm current from 100 to 300 */
+			qcom,fg-iterm-ma = <300>;
 			qcom,fg-chg-iterm-ma = <100>;
 			qcom,cycle-counter-en;
 			qcom,cycle-counter-low-soc = <15>;
@@ -307,6 +319,14 @@
 			qcom,capacity-learning-on;
 			qcom,fg-cc-cv-threshold-mv = <4340>;
 			qcom,pmic-revid = <&pmi8994_revid>;
+			/* #ifdef GIGASET_EDIT */
+			/* byron.ran@swdp.driver, 2015/07/16, add for fix load battery profile somtimes when start system */
+			qcom,vbat-estimate-diff-mv = <100>;
+
+			/* #ifdef GIGASET_EDIT */
+			/* byron.ran@swdp.driver, 2015/08/29, add adc the quiet thermal temp */
+			qcom,thermal-vadc = <&pm8994_vadc>;
+			/* #endif */
 
 			qcom,fg-soc@4000 {
 				status = "okay";
@@ -497,7 +517,7 @@
 
 		};
 
-		pmi8994_wled: qcom,leds@d800 {
+		qcom,leds@d800 {
 			compatible = "qcom,qpnp-wled";
 			reg = <0xd800 0x100>,
 				<0xd900 0x100>,
@@ -523,10 +543,10 @@
 			qcom,dim-method = "linear";
 			qcom,hyb-thres = <625>;
 			qcom,sync-dly-us = <800>;
-			qcom,fs-curr-ua = <16000>;
+			qcom,fs-curr-ua = <19000>;	//mod by jowen.li@swdp.driver, 2015/04/28, modify for bl curr
 			qcom,en-phase-stag;
 			qcom,ibb-pwrup-dly = <8>;
-			qcom,led-strings-list = [00 01 02 03];
+			qcom,led-strings-list = [00 01]; //mod by jowen.li@swdp.driver, 2015/04/28, modify for bl strings
 			qcom,en-ext-pfet-sc-pro;
 		};
 
@@ -539,9 +559,13 @@
 			interrupt-names = "sc-irq", "play-irq";
 			qcom,play-mode = "direct";
 			qcom,wave-play-rate-us = <5263>;
-			qcom,actuator-type = "lra";
+			/* #ifdef GIGASET_EDIT */
+			/* byron.ran@swdp.driver, 2015/04/30, modify type from lra to erm, because it is DC motor */
+			qcom,actuator-type = "erm";
 			qcom,wave-shape = "square";
-			qcom,vmax-mv = <2000>;
+			/* #ifdef GIGASET_EDIT */
+			/* byron.ran@swdp.driver, 2015/09/09, modify the driver voltage from 2V to 2.7V */
+			qcom,vmax-mv = <2700>;
 			qcom,ilim-ma = <800>;
 			qcom,sc-deb-cycles = <8>;
 			qcom,int-pwm-freq-khz = <505>;
@@ -554,7 +578,7 @@
 			qcom,wave-samp-rep-cnt = <1>;
 		};
 
-		qpnp_leds: qcom,leds@d000 {
+		qcom,leds@d000 {
 			compatible = "qcom,leds-qpnp";
 			reg = <0xd000 0x100>;
 			label = "rgb";
@@ -569,6 +593,16 @@
 				qcom,max-current = <12>;
 				qcom,default-state = "off";
 				linux,name = "red";
+				/* #ifdef GIGASET_EDIT */
+				/* byron.ran@swdp.driver, 2015/06/11, add for red led blink */
+				qcom,start-idx = <1>;
+				qcom,duty-pcts = [10 20 32 46 32 20 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00];
+				qcom,ramp-step-ms = <170>;
+				qcom,lut-flags = <3>;
+				qcom,pause-lo = <0>;
+				qcom,pause-hi = <0>;
+				qcom,use-blink;
+				/* #endif */
 				linux,default-trigger =
 					"battery-charging";
 			};
@@ -582,6 +616,16 @@
 				qcom,max-current = <12>;
 				qcom,default-state = "off";
 				linux,name = "green";
+				/* #ifdef GIGASET_EDIT */
+				/* byron.ran@swdp.driver, 2015/06/11, add for red green blink */
+				qcom,start-idx = <1>;
+				qcom,duty-pcts = [10 20 32 46 32 20 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00];
+				qcom,ramp-step-ms = <170>;
+				qcom,lut-flags = <3>;
+				qcom,pause-lo = <0>;
+				qcom,pause-hi = <0>;
+				qcom,use-blink;
+				/* #endif */
 				linux,default-trigger = "battery-full";
 			};
 
@@ -593,6 +637,16 @@
 				qcom,pwm-us = <1000>;
 				qcom,max-current = <12>;
 				qcom,default-state = "off";
+				/* #ifdef GIGASET_EDIT */
+				/* byron.ran@swdp.driver, 2015/06/11, add for blue led blink */
+				qcom,start-idx = <1>;
+				qcom,duty-pcts = [10 20 32 46 32 20 10 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00];
+				qcom,ramp-step-ms = <170>;
+				qcom,lut-flags = <3>;
+				qcom,pause-lo = <0>;
+				qcom,pause-hi = <0>;
+				qcom,use-blink;
+				/* #endif */
 				linux,name = "blue";
 				linux,default-trigger = "boot-indication";
 			};
@@ -650,7 +704,7 @@
 						"torch0_trigger";
 				qcom,max-current = <200>;
 				qcom,id = <0>;
-				qcom,current = <120>;
+				qcom,current = <0>;
 				boost-supply = <&pmi8994_boostbypass>;
 				boost-voltage-max = <3600000>;
 			};
@@ -662,7 +716,7 @@
 						"torch1_trigger";
 				qcom,max-current = <200>;
 				qcom,id = <1>;
-				qcom,current = <120>;
+				qcom,current = <200>;
 				boost-supply = <&pmi8994_boostbypass>;
 				boost-voltage-max = <3600000>;
 			};

@@ -90,6 +90,9 @@ static int32_t msm_ois_write_settings(struct msm_ois_ctrl_t *o_ctrl,
 			switch (settings[i].data_type) {
 			case MSM_CAMERA_I2C_BYTE_DATA:
 			case MSM_CAMERA_I2C_WORD_DATA:
+#ifdef GIGASET_EDIT // davis.xu 20150325 Add this for ois status check(bit mask).
+			case MSM_CAMERA_I2C_SET_BYTE_MASK:
+#endif
 				do {
 					rc = o_ctrl->i2c_client.i2c_func_tbl
 						->i2c_poll(&o_ctrl->i2c_client,

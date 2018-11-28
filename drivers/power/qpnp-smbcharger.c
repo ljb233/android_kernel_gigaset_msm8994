@@ -37,6 +37,10 @@
 #include <linux/of_batterydata.h>
 #include <linux/msm_bcl.h>
 #include <linux/ktime.h>
+#ifdef GIGASET_EDIT
+/* byron.ran@swdp.driver, 2015/05/25,  add for distinguish 21&27 project*/
+#include <linux/init.h>
+#endif
 
 /* Mask/Bit helpers */
 #define _SMB_MASK(BITS, POS) \
@@ -328,6 +332,11 @@ module_param_named(
 		else							\
 			pr_debug_ratelimited(fmt, ##__VA_ARGS__);	\
 	} while (0)
+
+#ifdef GIGASET_EDIT	
+/*byron.ran@swdp.driver, 2015/03/07, add for dump the charger register */
+static void dump_regs(struct smbchg_chip *chip);
+#endif
 
 #ifdef CONFIG_BATTERY_JEITA_COMPLIANCE
 static void smbchg_source_stay_awake(struct smbchg_wakeup_source *source)
@@ -681,7 +690,12 @@ static enum power_supply_type usb_type_enum[] = {
 	POWER_SUPPLY_TYPE_USB_DCP,	/* bit 1 */
 	POWER_SUPPLY_TYPE_USB_DCP,	/* bit 2 */
 	POWER_SUPPLY_TYPE_USB_CDP,	/* bit 3 */
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/03/07, modify the type */	
 	POWER_SUPPLY_TYPE_USB,		/* bit 4 error case, report SDP */
+#else
+	POWER_SUPPLY_TYPE_USB_DCP,  /* bit 4 error case, report DCP */
+#endif
 };
 
 /* helper to return enum power_supply_type of USB type */
@@ -1467,7 +1481,12 @@ static int smbchg_set_usb_current_max(struct smbchg_chip *chip,
 					USBIN_LIMITED_MODE | USB51_500MA);
 		chip->usb_max_current_ma = 500;
 	}
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/10/12, modify for fix the bug that when pmic detect SDP, but dwc3 detect DCP, so that can't charging*/
 	if (current_ma == CURRENT_900_MA) {
+#else
+	if (current_ma >= CURRENT_900_MA) {
+#endif
 		rc = smbchg_sec_masked_write(chip,
 					chip->usb_chgpth_base + CHGPTH_CFG,
 					CFG_USB_2_3_SEL_BIT, CFG_USB_3);
@@ -1851,7 +1870,7 @@ static int smbchg_get_aicl_level_ma(struct smbchg_chip *chip)
 	return usb_current_table[reg];
 }
 
-#define PARALLEL_CHG_THRESHOLD_CURRENT	1800
+#define PARALLEL_CHG_THRESHOLD_CURRENT	600 //byron.ran modify from 1.8 to 0.6
 static void smbchg_parallel_usb_enable(struct smbchg_chip *chip)
 {
 	struct power_supply *parallel_psy = get_parallel_psy(chip);
@@ -1926,7 +1945,10 @@ static void smbchg_parallel_usb_enable(struct smbchg_chip *chip)
 	parallel_psy->set_property(parallel_psy,
 			POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX, &pval);
 
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/02/15, delete for debug*/
 	chip->parallel.enabled_once = true;
+#endif
 	new_parallel_cl_ma = total_current_ma / 2;
 
 	if (new_parallel_cl_ma == parallel_cl_ma) {
@@ -1982,11 +2004,13 @@ static void smbchg_parallel_usb_en_work(struct work_struct *work)
 	} else if (chip->parallel.current_max_ma != 0) {
 		pr_smb(PR_STATUS, "parallel charging unavailable\n");
 		smbchg_parallel_usb_disable(chip);
+#ifdef CONFIG_MACH_PM9X
 	} else {
 		pr_smb(PR_STATUS, "parallel charging is not ready, periodically monitor per 10 seconds\n");
 		schedule_delayed_work(
 			&chip->parallel_en_work,
 			msecs_to_jiffies(PARALLEL_MONITOR_TIMER_MS));
+#endif
 	}
 	mutex_unlock(&chip->parallel.lock);
 }
@@ -2333,6 +2357,21 @@ static int force_dcin_icl_write(void *data, u64 val)
 	smbchg_wipower_check(chip);
 	return 0;
 }
+
+#ifdef GIGASET_EDIT	
+/*byron.ran@swdp.driver, 2015/03/07, add for dump the charger register */
+static int dump_regs_write(void *data, u64 val)
+{
+	struct smbchg_chip *chip = data;
+
+	dump_regs(chip);
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(dump_regs_ops, NULL,
+		dump_regs_write, "0x%02llx\n");
+#endif
+
 DEFINE_SIMPLE_ATTRIBUTE(force_dcin_icl_ops, NULL,
 		force_dcin_icl_write, "0x%02llx\n");
 
@@ -4254,6 +4293,12 @@ static irqreturn_t dcin_uv_handler(int irq, void *_chip)
 	return IRQ_HANDLED;
 }
 
+#ifdef GIGASET_EDIT //jerry li  Drv. 2016_01_29 ,add for notice tp
+extern void  notice_tp_usb_insertion(void);
+extern void  notice_tp_usb_removal(void);
+
+#endif //GIGASET_EDIT 01_29_
+
 static void handle_usb_removal(struct smbchg_chip *chip)
 {
 	struct power_supply *parallel_psy = get_parallel_psy(chip);
@@ -4297,6 +4342,14 @@ static void handle_usb_removal(struct smbchg_chip *chip)
 	}
 	chip->parallel.enabled_once = false;
 	chip->vbat_above_headroom = false;
+
+#ifdef GIGASET_EDIT //jerry li  Drv. 2016_01_29 
+//jerry li#swdp.driver,  2016/01/29, add for notice tp
+//	printk("___ handle_usb_removal \n"); //jerry li //Drv. 2016_01_29 //
+	notice_tp_usb_removal( );
+
+#endif //GIGASET_EDIT 01_29_
+
 }
 
 static bool is_src_detect_high(struct smbchg_chip *chip)
@@ -4342,6 +4395,11 @@ static void handle_usb_insertion(struct smbchg_chip *chip)
 	read_usb_type(chip, &usb_type_name, &usb_supply_type);
 	pr_smb(PR_STATUS,
 		"inserted type = %d (%s)", usb_supply_type, usb_type_name);
+
+#ifdef GIGASET_EDIT //jerry li  Drv. 2016_01_29 add for notice tp
+//	printk("___ handle_usb_insertion \n"); //jerry li //Drv. 2016_01_29 //
+	notice_tp_usb_insertion( );
+#endif //GIGASET_EDIT 01_29_
 
 	smbchg_aicl_deglitch_wa_check(chip);
 	if (chip->usb_psy) {
@@ -5451,6 +5509,12 @@ static int smb_parse_dt(struct smbchg_chip *chip)
 	OF_PROP_READ(chip, chip->target_fastchg_current_ma,
 			"fastchg-current-ma", rc, 1);
 	OF_PROP_READ(chip, chip->vfloat_mv, "float-voltage-mv", rc, 1);
+#ifdef GIGASET_EDIT
+/* byron.ran@swdp.driver, 2015/05/25,  add for fixed 4.4V if the project is 27*/
+	if (device_version > DEVICE_VERSION_17427_EVT1 && device_version <= DEVICE_VERSION_17427_MP) {
+		chip->vfloat_mv = 4400;
+	}
+#endif
 #ifdef CONFIG_BATTERY_JEITA_COMPLIANCE
 	OF_PROP_READ(chip, chip->warm_fastchg_current_ma,
 			"warm-fastchg-current-ma", rc, 1);
@@ -5907,6 +5971,20 @@ static int create_debugfs_entries(struct smbchg_chip *chip)
 			"Couldn't create force dcin icl check file\n");
 		return -EINVAL;
 	}
+
+#ifdef GIGASET_EDIT	
+/*byron.ran@swdp.driver, 2015/03/07, add for dump the charger register */
+	ent = debugfs_create_file("dump_regs",
+				  S_IFREG | S_IWUSR | S_IRUGO | S_IWGRP | S_IWOTH,
+				  chip->debug_root, chip,
+				  &dump_regs_ops);
+	if (!ent) {
+		dev_err(chip->dev,
+			"Couldn't create dump regs file\n");
+		return -EINVAL;
+	}
+#endif
+	
 	return 0;
 }
 

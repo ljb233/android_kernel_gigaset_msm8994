@@ -311,7 +311,10 @@ static void power_supply_changed_work(struct work_struct *work)
 		class_for_each_device(power_supply_class, NULL, psy,
 				      __power_supply_changed_work);
 
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/05/23, delete for don't control RGB led in kernel */
 		power_supply_update_leds(psy);
+#endif
 
 		kobject_uevent(&psy->dev->kobj, KOBJ_CHANGE);
 		spin_lock_irqsave(&psy->changed_lock, flags);

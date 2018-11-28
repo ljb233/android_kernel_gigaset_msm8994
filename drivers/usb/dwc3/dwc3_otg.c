@@ -595,7 +595,12 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 					 */
 					if (dotg->charger_retry_count ==
 						max_chgr_retry_count) {
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/10/12, modify for DWC3_FLOATED_CHARGER charging 900mA current*/
 						dwc3_otg_set_power(phy, 0);
+#else
+						dwc3_otg_set_power(phy, 900);
+#endif
 						dbg_event(0xFF, "FLCHG put", 0);
 						pm_runtime_put_sync(phy->dev);
 						break;

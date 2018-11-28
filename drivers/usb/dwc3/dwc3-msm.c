@@ -77,7 +77,7 @@ module_param(override_phy_init, int, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(override_phy_init, "Override HSPHY Init Seq");
 
 /* Enable Proprietary charger detection */
-static bool prop_chg_detect;
+static bool prop_chg_detect = 1; //byron.ran modify for DWC3_FLOATED_CHARGER detect
 module_param(prop_chg_detect, bool, S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(prop_chg_detect, "Enable Proprietary charger detection");
 
@@ -2364,9 +2364,12 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 		psy->type = val->intval;
 
 		switch (psy->type) {
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/10/12, delete for DWC3_FLOATED_CHARGER detect*/
 		case POWER_SUPPLY_TYPE_USB:
 			mdwc->charger.chg_type = DWC3_SDP_CHARGER;
 			break;
+#endif
 		case POWER_SUPPLY_TYPE_USB_DCP:
 			mdwc->charger.chg_type = DWC3_DCP_CHARGER;
 			break;

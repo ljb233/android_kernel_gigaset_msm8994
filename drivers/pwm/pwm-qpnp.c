@@ -1790,6 +1790,10 @@ int pwm_lut_config(struct pwm_device *pwm, int period_us,
 }
 EXPORT_SYMBOL_GPL(pwm_lut_config);
 
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/02/16 added for oem panel bl ctrl
+int first_flag=0;
+#endif //GIGASET_EDIT
 static int qpnp_parse_pwm_dt_config(struct device_node *of_pwm_node,
 		struct device_node *of_parent, struct qpnp_pwm_chip *chip)
 {
@@ -1808,7 +1812,19 @@ static int qpnp_parse_pwm_dt_config(struct device_node *of_pwm_node,
 		return rc;
 	}
 
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/02/16 added for oem panel bl ctrl
+	if(first_flag==0)
+	{
+	  first_flag=1;
+	}
+	else
 	rc = _pwm_config(chip, LVL_USEC, chip->pwm_config.pwm_duty, period);
+#else
+
+	rc = _pwm_config(chip, LVL_USEC, chip->pwm_config.pwm_duty, period);
+
+#endif //GIGASET_EDIT
 
 	return rc;
 }

@@ -62,10 +62,19 @@
 	interrupt-map-mask = <0xffffffff>;
 	interrupt-map = <0 &intc 0 125 0
 			1 &intc 0 221 0
-			2 &pm8994_gpios 8 0x3>;
+                        /* #ifdef GIGASET_EDIT */
+                        /* cesc.xu@swdp.system, 2015/06/01, add SD card support. change gpio to gpio69 */
+			2 &msm_gpio 69 0>; 
+                        /* #else */
+                        /* 2 &pm8994_gpios 8 0x3>; */
+                        /* #endif GIGASET_EDIT */
 	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
-	cd-gpios = <&pm8994_gpios 8 0x1>;
-
+        /* #ifdef GIGASET_EDIT */ 
+        /* cesc.xu@swdp.system, 2015/06/01, add SD card support. change gpio to gpio69 */
+        cd-gpios = <&msm_gpio 69 0x0>; 
+        /* #else */
+        /*cd-gpios = <&pm8994_gpios 8 0x1>; */  
+        /* #endif GIGASET_EDIT */
 	pinctrl-names = "active", "sleep";
 	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on>;
 	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off>;
@@ -278,6 +287,13 @@
 #include "dsi-panel-sharp-dualmipi0-wqxga-video.dtsi"
 #include "dsi-panel-sharp-dualmipi1-wqxga-video.dtsi"
 #include "dsi-panel-jdi-1080p-video.dtsi"
+#include "dsi-panel-hx8379a-fwvga-video.dtsi"
+//#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/04/23 add auto match lcm
+#include "dsi-panel-jdi-1080p-cmd_17421.dtsi"
+#include "dsi-panel-jdi-1080p-cmd_17427.dtsi"
+#include "dsi-panel-sharp-1080p-vdo_17421.dtsi"
+//#endif GIGASET_EDIT
 #include "dsi-panel-sharp-1080p-cmd.dtsi"
 
 &mdss_mdp {
@@ -294,6 +310,76 @@
 	qcom,pins = <&gp 10>;
 };
 
+&mdss_dsi0 {
+//#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/03/14 fix lcm dump
+	qcom,dsi-pref-prim-pan-0 = <&dsi_hx8379a_fwvga_video>;
+	qcom,dsi-pref-prim-pan-1 = <&dsi_jdi_1080_vid>;
+	qcom,dsi-pref-prim-pan-2 = <&dsi_jdi_1080_cmd_17421>;
+	qcom,dsi-pref-prim-pan-3 = <&dsi_jdi_1080_cmd_17427>;
+	qcom,dsi-pref-prim-pan-4 = <&dsi_sharp_1080_vdo_17421>;	
+	
+//#else
+	/*qcom,dsi-pref-prim-pan = <&dsi_dual_sharp_video_0>;*/
+//#endif //GIGASET_EDIT	
+	pinctrl-names = "mdss_default", "mdss_sleep";
+	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
+	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
+	qcom,dsi-panel-bias-vreg;
+	qcom,platform-te-gpio = <&msm_gpio 10 0>;
+	qcom,platform_ldoen-gpio = <&pm8994_gpios 1 0>; /*2.7-->1.8v ldo enable pin*/
+	qcom,platform-reset-gpio = <&msm_gpio 78 0>;
+	//qcom,platform-enable-gpio = <&msm_gpio 14 0>;  /*Backlight ldo enable  LCM_LED_EN*/
+};
+
+&dsi_jdi_1080_vid {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <4095>;//<3685>; //
+	qcom,cont-splash-enabled;
+};
+ 
+//#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/03/14 fix lcm dump
+
+&dsi_jdi_1080_cmd_17427 {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <3500>;//<3900>;//<3274>;//<4095>;
+	qcom,cont-splash-enabled;
+};
+
+&dsi_jdi_1080_cmd_17421 {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-bl-min-level = <1>;//<70>;//
+	qcom,mdss-dsi-bl-max-level = <3685>; //<4095>;//
+	qcom,cont-splash-enabled;
+};
+
+&dsi_hx8379a_fwvga_video {
+	pwms = <&pm8994_pwm_3 0 0>;
+	pwm-names = "backlight";
+	qcom,mdss-dsi-bl-pwm-pmi;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	qcom,mdss-dsi-bl-pmic-pwm-frequency = <30>; 
+	qcom,mdss-dsi-bl-min-level = <1>;	
+	qcom,mdss-dsi-bl-max-level = <4095>;					 
+	qcom,mdss-dsi-bl-pmic-bank-select = <2>;
+	qcom,mdss-dsi-pwm-gpio = <&pm8994_gpios 7 0>;
+	qcom,cont-splash-enabled;
+};
+
+&dsi_sharp_1080_vdo_17421 {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_wled";
+	qcom,mdss-dsi-bl-min-level = <1>;//<70>;//
+	qcom,mdss-dsi-bl-max-level = <3685>; //<4095>;//
+	qcom,cont-splash-enabled;
+};
+
+//#endif //GIGASET_EDIT	
+
+//#else
+/*
 &mdss_dsi0 {
 	qcom,dsi-pref-prim-pan = <&dsi_dual_sharp_video_0>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
@@ -322,6 +408,8 @@
 	qcom,mdss-dsi-bl-max-level = <4095>;
 	qcom,cont-splash-enabled;
 };
+*/
+//#endif //GIGASET_EDIT	
 
 &labibb {
 	status = "ok";
@@ -346,6 +434,9 @@
 	qcom,mdss-dsi-min-refresh-rate = <30>;
 };
 
+/* //#ifndef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/08/01 disable hdmi && disable gpio33 default config
+/*
 &pmx_hdmi_cec {
 	qcom,num-grp-pins = <1>;
 	qcom,pins = <&gp 31>;
@@ -376,9 +467,11 @@
 	pinctrl-4 = <&mdss_hdmi_hpd_suspend &mdss_hdmi_ddc_suspend
 						&mdss_hdmi_cec_suspend>;
 };
-
+*/
 &soc {
 	i2c@f9924000 {
+		/* //#ifndef GIGASET_EDIT
+		//jowen.li@swdp.system, 2015/05/05 update new ctp driver
 		synaptics@20 {
 			compatible = "synaptics,dsx";
 			reg = <0x20>;
@@ -394,25 +487,98 @@
 			synaptics,reset-gpio = <&msm_gpio 60 0x00>;
 			synaptics,irq-gpio = <&msm_gpio 61 0x2008>;
 			synaptics,disable-gpios;
-			/* Underlying clocks used by secure touch */
+			/ Underlying clocks used by secure touch
 			clock-names = "iface_clk", "core_clk";
 			clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
 				 <&clock_gcc clk_gcc_blsp1_qup2_i2c_apps_clk>;
 		};
+*/ //#else
+		synaptics_dsx@20 {
+			compatible = "synaptics,dsx-i2c";
+			reg = <0x20>;
+			interrupt-parent = <&msm_gpio>;
+			/*interrupts = <61 0x2>;*/
+			interrupts = <61 0x2008>;
+			//vdd_ana-supply = <&pm8994_l22>;	
+			//vcc_i2c-supply = <&pm8994_l14>;
+
+			vdd_ana-supply = <&pm8994_l14>;	
+			vcc_i2c-supply = <&pm8994_l22>;
+	
+			synaptics,vdd-gpio = <&msm_gpio 33 0x00>;//for 427 ldo
+
+			pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
+			pinctrl-0 = <&ts_active>;
+			pinctrl-1 = <&ts_suspend>;
+			synaptics,ub-i2c-addr = <0x20>;
+			synaptics,pwr-reg-name = "vdd_ana";
+			synaptics,bus-reg-name = "vcc_i2c";
+			synaptics,reset-gpio = <&msm_gpio 60 0x00>;
+			synaptics,reset-on-state = <0>;
+			synaptics,irq-gpio = <&msm_gpio 61 0x2008>;
+			synaptics,irq-on-state = <0>;
+			synaptics,irq-flags = <0x2008>; // IRQF_ONESHOT | IRQF_TRIGGER_LOW 
+			synaptics,power-delay-ms = <5>;//<20>;
+			synaptics,reset-delay-ms = <8>;//<20>;
+			synaptics,reset-active-ms = <10>;
+			synaptics,max-y-for-2d = <1920>; // remove if no virtual buttons 
+			/*synaptics,vir-button-codes = <102 100 900 100 60 158 300 900 100 60>;*/
+		};
+
+		shtsc@18 {
+			compatible = "sharp,shtsc_i2c";
+			reg = <0x18>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <61 0x2004>;//<61 0x4>;// high-level trigger. but hard coded in the source.
+			vdd-supply = <&pm8994_l22>;
+			vcc_i2c-supply = <&pm8994_l14>;
+
+			//pinctrl-names = "pmx_ts_active", "pmx_ts_suspend";
+			//pinctrl-0 = <&ts_active>;
+			//pinctrl-1 = <&ts_suspend>;
+
+			sharp,pwr-reg-name = "vdd";
+			sharp,bus-reg-name = "vcc_i2c";
+			sharp,reset-gpio = <&msm_gpio 60 0x00>;
+			sharp,irq-gpio = <&msm_gpio 61 0x2004>;//<&msmgpio 61 0x00>;
+
+			sharp,panel-coords = <0 0 1079 1919>; // depends on an LCD resolution (0 0 Xmax-1 Ymax-1)
+			sharp,display-coords = <0 0 1079 1919>; // depends on an LCD resolution (0 0 Xmax-1 Ymax-1)
+			sharp,i2c-pull-up;
+			ts_touch_num_max = <10>;
+			ts_pressure_max = <65535>;
+			ts_flip_x = <0>;
+			ts_flip_y = <0>;
+			ts_swap_xy = <0>;
+
+		};
+//#endif				
 	};
 
 	gen-vkeys {
 		compatible = "qcom,gen-vkeys";
 		label = "synaptics_dsx";
-		qcom,disp-maxx = <1599>;
-		qcom,disp-maxy = <2559>;
-		qcom,panel-maxx = <1599>;
-		qcom,panel-maxy = <2703>;
+//#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/02/13 added for oem panel 
+		qcom,disp-maxx = <1079>;
+		qcom,disp-maxy = <1919>;
+		qcom,panel-maxx = <1079>;
+		qcom,panel-maxy = <1920>;
+//#else		
+//		qcom,disp-maxx = <1599>;
+//		qcom,disp-maxy = <2559>;
+//		qcom,panel-maxx = <1599>;
+//		qcom,panel-maxy = <2703>;
+//#endif //GIGASET_EDIT		
 		qcom,key-codes = <158 139 102 217>;
 	};
 
-	i2c@f9928000 { /* BLSP1 QUP6 */
+	/* #ifdef GIGASET_EDIT */
+	/* billy.wang@swdp.driver, 2015/07/03, remove nfc */
+	
+	i2c@f9928000 { /* BLSP1 QUP6 * /
 		status = "ok";
+		/*
 		nfc-nci@e {
 			compatible = "qcom,nfc-nci";
 			reg = <0x0e>;
@@ -430,7 +596,9 @@
 			clocks = <&clock_rpm clk_bb_clk2_pin>;
 			clock-names = "ref_clk";
 		};
+		*/
 	};
+	/* #endif //GIGASET_EDIT */
 
 	gpio_keys {
 		compatible = "gpio-keys";
@@ -441,11 +609,15 @@
 			gpios = <&pm8994_gpios 3 0x1>;
 			linux,input-type = <1>;
 			linux,code = <115>;
+			/* #ifdef GIGASET_EDIT */
+			/* jung.liu enable the vol_up key for wakeup to fix the volume adjust in calling .byron.ran@swdp.driver, 2015/08/05, delete for not wake up system */
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
 
-		cam_snapshot {
+/* #ifdef GIGASET_EDIT */
+/* byron.ran@swdp.driver, 2015/08/05, delete for not use */
+/*		cam_snapshot {
 			label = "cam_snapshot";
 			gpios = <&pm8994_gpios 4 0x1>;
 			linux,input-type = <1>;
@@ -461,7 +633,7 @@
 			linux,code = <528>;
 			gpio-key,wakeup;
 			debounce-interval = <15>;
-		};
+		};*/
 
 
 	};
@@ -502,16 +674,37 @@
 			"MIC BIAS4 External", "Digital Mic6";
 
 		qcom,us-euro-gpios = <&pm8994_mpps 2 0>;
+		/* frank, 2015/05/04, using for switch control */
+		swi,pwr_gpio = <&msm_gpio 106 0>;
+		swi,mute_gpio = <&msm_gpio 59 0>;
+		swi,sel_gpio = <&msm_gpio 110 0>;
+		qcom,gpio94 = <&msm_gpio 94 0>;
 		qcom,cdc-micbias2-headset-only;
-		qcom,mbhc-audio-jack-type = "6-pole-jack";
+/*		qcom,mbhc-audio-jack-type = "6-pole-jack"; */
+		qcom,mbhc-audio-jack-type = "4-pole-jack";
 		qcom,ext-ult-spk-amp-gpio = <&pmi8994_gpios 1 0>;
-		qcom,hdmi-audio-rx;
+		/* Del by Harry */
+		/* qcom,hdmi-audio-rx; */
+		
 		asoc-codec = <&stub_codec>, <&hdmi_audio>;
 		asoc-codec-names = "msm-stub-codec.1", "msm-hdmi-audio-codec-rx";
 	};
 };
 
 &pm8994_gpios {
+//#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/02/13 added for oem panel
+	gpio@c000 { /* GPIO 1 */
+		qcom,mode = <1>;		
+		qcom,output-type = <0>;		
+		qcom,invert = <1>;		
+		qcom,vin-sel = <2>;		
+		qcom,src-sel = <0>;		
+		qcom,out-strength = <1>;	
+		qcom,master-en = <1>;		
+		status = "okay";
+	};
+//#endif //GIGASET_EDIT	
 	gpio@c200 { /* GPIO 3 */
 		qcom,mode = <0>;
 		qcom,pull = <0>;
@@ -535,17 +728,30 @@
 		qcom,src-sel = <0>;
 		status = "okay";
 	};
+//#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/02/13 added for oem panel
 
-	gpio@c600 { /* GPIO 7 */
-		/* NFC pwr request */
-		qcom,mode = <0>;                /* QPNP_PIN_MODE_DIG_IN */
-		qcom,pull = <5>;                /* QPNP_PIN_PULL_NO */
-		qcom,vin-sel = <2>;             /* QPNP_PIN_VIN2 */
-		qcom,src-sel = <2>;             /* QPNP_PIN_SEL_FUNC_1 */
-		qcom,master-en = <1>;
-		status = "okay";
+	gpio@c600 { /* GPIO 7 */ 
+		/* bl pwm3 request */ 
+		qcom,mode = <1>; /* QPNP_PIN_MODE_DIG_OU */ 
+		qcom,pull = <5>; /* QPNP_PIN_PULL_NO */ 
+		qcom,vin-sel = <2>; /* QPNP_PIN_VIN2 */ 
+		qcom,src-sel = <2>; /* QPNP_PIN_SEL_FUNC_1 */ 
+		qcom,master-en = <1>; 
+		status = "okay"; 
 	};
 
+//#else
+//	gpio@c600 { /* GPIO 7 */
+//		/* NFC pwr request */
+//		qcom,mode = <0>;                /* QPNP_PIN_MODE_DIG_IN */
+//		qcom,pull = <5>;                /* QPNP_PIN_PULL_NO */
+//		qcom,vin-sel = <2>;             /* QPNP_PIN_VIN2 */
+//		qcom,src-sel = <2>;             /* QPNP_PIN_SEL_FUNC_1 */
+//		qcom,master-en = <1>;
+//		status = "okay";
+//	};
+//#endif //GIGASET_EDIT	
 	gpio@c900 { /* GPIO 10 */
 		/* NFC clk request */
 		qcom,mode = <0>;                /* QPNP_PIN_MODE_DIG_IN */
@@ -654,6 +860,132 @@
 		qcom,cdc-on-demand-supplies = "cdc-vdd-spkdrv",
 					      "cdc-vdd-spkdrv-2";
 	};
+	/* Add for ES704 */
+	es704_codec {
+		compatible = "es704-codec-gen0";
+		elemental-addr = [00 01 83 00 BE 02];
+		slim-ifd = "es704-codec-intf";
+		slim-ifd-elemental-addr = [00 00 83 00 BE 02];
+
+		qcom,clk-src = "BBCLK2";
+		
+		adnc,laddr = <0xf0>;
+		adnc,reset-gpio  = <&msm_gpio 58 0>; /* DEFINED BY CUSTOMER */
+		adnc,wakeup-gpio = <&msm_gpio 41 0>; 
+		adnc,gpioa-gpio = <&msm_gpio 77 0>;
+		adnc,gpiob-gpio = <&msm_gpio 52 0>;
+		/*
+		 * adnc,power_gpio = <&msm_gpio 108 0>;
+		 * adnc,ext_pa_gpio = <&msm_gpio 109 0>;
+		 */
+		/* Add for SPI CS */
+		// Only need in UART mode
+		// adnc,spi_cs_gpio = <&msm_gpio 55 0>;
+		
+		adnc,enable_hs_uart_intf = <0>;
+		adnc,ext_clk_rate = <8>;
+		adnc,debounce_timer = <3>;
+		adnc,plug_det_enabled = <1>;
+		adnc,mic_det_enabled = <1>;
+		
+		adnc,vdd_core_old-supply = <&pm8994_l25>;
+		adnc,vdd_core_new-supply = <&pm8994_l31>;
+		adnc,vdd_core_min = <1100000>;
+		adnc,vdd_core_max = <1100000>;
+
+		adnc,gpio_b_irq_type = <4>;
+		adnc,cmd_comp_mode = <0>;	/* ES_CMD_COMP_POLL */
+		//adnc,irq_base = <>;
+
+		/* Button Control 1 */
+		adnc,btn_press_settling_time = <4>; /* 960usec */
+		adnc,btn_press_polling_rate  = <1>; /* 16Hz */
+		adnc,btn_press_det_act       = <1>; /* Enable button press detection */
+
+		/* Button Control 2 */
+		adnc,double_btn_timer       = <0>;
+		adnc,mic_det_settling_timer = <0>;
+
+		/* Button Control 3 */
+		adnc,long_btn_timer         = <0>;
+		adnc,adc_btn_mute           = <0>;
+
+		/* Button Control 4 */
+		adnc,valid_levels           = <31>; /* Levels through 0 to 4 */
+		adnc,impd_det_timer         = <0>;  /* 120usec */
+				
+		pinctrl-names = "es75x-sleep", "es75x-active";
+		pinctrl-0 = <&es75x_event_sleep>, <&es75x_api_sleep>;
+		pinctrl-1 = <&es75x_event_active>, <&es75x_api_active>;  
+		clock-names = "es704_mclk";  
+		clocks = <&clock_rpm clk_div_clk3_ao>;
+		adnc,mclk-gpios = <&pm8994_gpios 17 0>;
+		adnc,mclk-clk-freq = <19200000>;
+	};
+	
+	/* Add for ES705 */
+	es705_codec {
+		compatible = "es705-codec-gen0";
+		elemental-addr = [00 01 03 00 BE 02];
+		slim-ifd = "es705-codec-intf";
+		slim-ifd-elemental-addr = [00 00 03 00 BE 02];
+
+		qcom,clk-src = "BBCLK2";
+		
+		adnc,laddr = <0xf0>;
+		adnc,reset-gpio  = <&msm_gpio 58 0>; /* DEFINED BY CUSTOMER */
+		adnc,wakeup-gpio = <&msm_gpio 41 0>; 
+		adnc,gpioa-gpio = <&msm_gpio 77 0>;
+		adnc,gpiob-gpio = <&msm_gpio 52 0>;
+		/*
+		 * adnc,power_gpio = <&msm_gpio 108 0>;
+		 * adnc,ext_pa_gpio = <&msm_gpio 109 0>;
+		 */
+		/* Add for SPI CS */
+		// Only need in UART mode
+		// adnc,spi_cs_gpio = <&msm_gpio 55 0>;
+		
+		adnc,enable_hs_uart_intf = <0>;
+		adnc,ext_clk_rate = <8>;
+		adnc,debounce_timer = <3>;
+		adnc,plug_det_enabled = <1>;
+		adnc,mic_det_enabled = <1>;
+		
+		adnc,vdd_core_old-supply = <&pm8994_l25>;
+		adnc,vdd_core_new-supply = <&pm8994_l31>;
+		adnc,vdd_core_min = <1100000>;
+		adnc,vdd_core_max = <1100000>;
+
+		adnc,gpio_b_irq_type = <4>;
+		adnc,cmd_comp_mode = <0>;	/* ES_CMD_COMP_POLL */
+		//adnc,irq_base = <>;
+
+		/* Button Control 1 */
+		adnc,btn_press_settling_time = <4>; /* 960usec */
+		adnc,btn_press_polling_rate  = <1>; /* 16Hz */
+		adnc,btn_press_det_act       = <1>; /* Enable button press detection */
+
+		/* Button Control 2 */
+		adnc,double_btn_timer       = <0>;
+		adnc,mic_det_settling_timer = <0>;
+
+		/* Button Control 3 */
+		adnc,long_btn_timer         = <0>;
+		adnc,adc_btn_mute           = <0>;
+
+		/* Button Control 4 */
+		adnc,valid_levels           = <31>; /* Levels through 0 to 4 */
+		adnc,impd_det_timer         = <0>;  /* 120usec */
+				
+		pinctrl-names = "es75x-sleep", "es75x-active";
+		pinctrl-0 = <&es75x_event_sleep>, <&es75x_api_sleep>;
+		pinctrl-1 = <&es75x_event_active>, <&es75x_api_active>;  
+		clock-names = "es704_mclk";  
+		clocks = <&clock_rpm clk_div_clk3_ao>;
+		adnc,mclk-gpios = <&pm8994_gpios 17 0>;
+		adnc,mclk-clk-freq = <19200000>;
+	};
+
 };
 
 &pmi8994_gpios {
@@ -690,15 +1022,33 @@
 	status = "ok";
 };
 
+/* Add by Harry */
+/*
+&blsp2_uart1 {
+	status = "ok";
+};
+*/
+/* End of add by Harry */
+
 &blsp1_uart2 {
 	status= "ok";
 	 pinctrl-names = "default";
 	 pinctrl-0 = <&uart_console_sleep>;
 };
 
+/* #ifdef GIGASET_EDIT */
+/* jack.zheng@swdp.driver, 2015/02/12, add for IrRemote */
+&ir_blsp1_uart6 {
+	status= "ok";
+};
+/* #endif //GIGASET_EDIT */
+
+// Del by Harry 
+/*
 &pcie0 {
 	status = "disabled";
 };
+*/
 
 &usb3 {
 	status = "ok";
@@ -732,8 +1082,11 @@
 	status = "okay";
 };
 
+/* SiLabs FM chip, slave id 0x11*/
+/* Del by Harry */
+/*
 &i2c_5 {
-	silabs4705@11 { /* SiLabs FM chip, slave id 0x11*/
+	silabs4705@11 { 
 		status = "ok";
 		compatible = "silabs,si4705";
 		reg = <0x11>;
@@ -758,11 +1111,19 @@
 		interrupt-names = "silabs_fm_int", "silabs_fm_status_int";
 	};
 };
+*/
 
 /{
 	mtp_batterydata: qcom,battery-data {
 		qcom,batt-id-range-pct = <15>;
 		#include "batterydata-itech-3000mah.dtsi"
+		/* #ifdef GIGASET_EDIT */
+		/* byron.ran@swdp.driver, 2015/04/30, add the battery profile */
+		#include "batterydata-itech-330K-3000mah.dtsi"
+		#include "batterydata-itech-150K-3000mah.dtsi"
+		#include "batterydata-itech-330K-3875mah.dtsi"
+		#include "batterydata-itech-200K-3875mah.dtsi"
+		/* #endif */
 	};
 };
 
@@ -792,7 +1153,8 @@
 
 &cnss {
 	pinctrl-names = "default";
-	pinctrl-0 = <&cnss_default &pcie0_clkreq_default>;
+	// Del pcie0_clkreq_default by Harry,this pin used by es704
+	pinctrl-0 = <&cnss_default /* &pcie0_clkreq_default */>;
 };
 
 &i2c_11 {
@@ -805,6 +1167,25 @@
 	};
 };
 
+&i2c_5 {
+	revpa-lm48560@6f {
+		compatible = "qcom.rev-lm48560";
+		reg = <0x6f>;
+		rev,shutdown-gpio = <&msm_gpio 8 0>;
+		status = "ok";
+	};
+};
+
+&i2c_5 {
+	smartPA@34 {
+		compatible = "nxp,tfa98xx";
+		reg = <0x34>;
+		tfa9890,reset-gpio = <&msm_gpio 62 0>;
+		tfa9890,intr_gpio = <&msm_gpio 64 0>;
+		tfa9890,use_irq = <0>;
+		status = "ok";
+	};
+};
 &usb_ehci {
 	status = "ok";
 	qcom,usb2-enable-uicc;
@@ -813,3 +1194,117 @@
 &qusb_phy {
 	status = "ok";
 };
+/* #ifdef GIGASET_EDIT */
+/* billy.wang@swdp.driver, 2015/07/03, add for fingerprint */
+&spi_fpc {
+		fpc_fpc1020@0 {
+			status = "ok";
+			compatible = "fpc,fpc1020";
+			reg = <0>;
+			spi-max-frequency = <16000000>;
+			fpc,gpio_cs = <&msm_gpio 87 0x00>;
+			fpc,gpio_reset = <&msm_gpio 89 0x00>;
+			fpc,gpio_irq = <&msm_gpio 90 0x00>;
+			interrupt-parent = <&msm_gpio>;
+			interrupts = <90 0>;
+			interrupt-names = "fpc_irq";
+			pinctrl-names = "finger_event_active","finger_event_suspend";
+			pinctrl-0 = <&finger_event_active >;
+			pinctrl-1 = <&finger_event_suspend >;
+			/* fpc,vddtx_mv = <3300>;  */
+			/* fpc,txout_boost_enable; */
+			/* fpc,force_hwid = <0x1234> */
+			/* vcc_spi-supply	= <&pm8994_l32>; */
+			/* vdd_ana-supply	= <&pm8994_l32>; */
+			/* vdd_io-supply = <&pm8994_l32>; */
+			/* vdd_tx-supply = <&pm8994_l32>; */
+		};
+	};
+/* #endif //GIGASET_EDIT */
+/*
+ * Add by Harry
+ * I2C6 for HI-FI DAC
+ */
+&i2c_6 {
+	es9018-dac@48 {
+		compatible = "qcom,es9018-hifi";
+		reg = <0x48>;
+		hi-fi,reset-gpio = <&msm_gpio 109 0>;
+		hi-fi,clk1-en-gpio = <&msm_gpio 133 0>;
+		hi-fi,clk2-en-gpio = <&msm_gpio 93 0>;
+		hi-fi,pwr_pin_num = <2>;
+		hi-fi,pwr_gpio_0 = <&msm_gpio 91 0>;
+		hi-fi,pwr_gpio_1 = <&msm_gpio 107 0>;
+		 
+		hi-fi,vdd_core-supply = <&pm8994_l17>;
+		hi-fi,vdd_core_min = <2650000>;
+		hi-fi,vdd_core_max = <2750000>;
+		
+		tfa9890,reset-gpio = <&msm_gpio 62 0>;
+		
+		swi,pwr_gpio = <&msm_gpio 106 0>;
+		swi,mute_gpio = <&msm_gpio 59 0>;
+		swi,sel_gpio = <&msm_gpio 110 0>;
+		
+		status = "ok";
+	};
+};
+
+/* SPI10 for es704 */
+&spi_es704 {
+	escore-codec@0 {
+		status = "ok";
+		compatible = "earSmart-codec";
+		reg = <0>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		qcom,clk-src = "BBCLK2";
+		spi-max-frequency = <19200000>;
+		spi-cpha;
+
+		adnc,reset-gpio  = <&msm_gpio 58 0>; /* DEFINED BY CUSTOMER */
+		adnc,wakeup-gpio = <&msm_gpio 41 0>;
+		adnc,gpioa-gpio = <&msm_gpio 77 0>;
+		adnc,gpiob-gpio = <&msm_gpio 52 0>;
+		/*
+		adnc,power_gpio = <&msm_gpio 108 0>;
+		adnc,ext_pa_gpio = <&msm_gpio 109 0>;
+		*/
+		adnc,spi-fw-download-speed = <9600000>;
+		adnc,spi-operational-speed = <4800000>;
+		adnc,enable_hs_uart_intf = <0>;
+		adnc,ext_clk_rate = <8>;
+		adnc,debounce_timer = <3>;
+		adnc,plug_det_enabled = <1>;
+		adnc,mic_det_enabled = <1>;
+
+		adnc,gpio_b_irq_type = <4>;
+		adnc,cmd_comp_mode = <0>;	/* ES_CMD_COMP_POLL */
+		//adnc,irq_base = <>;
+
+		/* Button Control 1 */
+		adnc,btn_press_settling_time = <4>; /* 960usec */
+		adnc,btn_press_polling_rate  = <1>; /* 16Hz */
+		adnc,btn_press_det_act       = <1>; /* Enable button press detection */
+
+		/* Button Control 2 */
+		adnc,double_btn_timer       = <0>;
+		adnc,mic_det_settling_timer = <0>;
+
+		/* Button Control 3 */
+		adnc,long_btn_timer         = <0>;
+		adnc,adc_btn_mute           = <0>;
+
+		/* Button Control 4 */
+		adnc,valid_levels           = <31>; /* Levels through 0 to 4 */
+		adnc,impd_det_timer         = <0>;  /* 120usec */
+		
+		pinctrl-names = "es75x-sleep", "es75x-active";
+		pinctrl-0 = <&es75x_event_sleep>, <&es75x_api_sleep>;
+		pinctrl-1 = <&es75x_event_active>, <&es75x_api_active>; 
+		clock-names = "es704_mclk";		
+		clocks = <&clock_rpm clk_div_clk3_ao>;
+	};
+};
+
+/* End of add by Harry */

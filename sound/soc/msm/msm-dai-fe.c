@@ -737,6 +737,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.name = "SEC_MI2S_RX_HOSTLESS",
 		.probe = fe_dai_probe,
 	},
+#if 0
 	{
 		.playback = {
 			.stream_name = "Quaternary MI2S_RX Hostless Playback",
@@ -763,6 +764,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.name = "QUAT_MI2S_HOSTLESS",
 		.probe = fe_dai_probe,
 	},
+#endif
 	{
 		.playback = {
 			.stream_name = "Quaternary MI2S_RX Hostless Playback",

@@ -14,7 +14,7 @@
 # Based on the ia64 boot/Makefile.
 #
 
-include $(srctree)/arch/arm64/boot/dts/Makefile
+include $(srctree)/arch/arm64/boot/dts/qcom/Makefile
 
 targets := Image Image.gz
 
@@ -24,7 +24,11 @@ DTB_LIST := $(addsuffix .dtb,$(DTB_NAMES))
 else
 DTB_LIST := $(dtb-y)
 endif
+
+DTB_OBJS := $(addprefix arch/arm/boot/dts/,$(DTB_LIST))
+ifeq ("$(wildcard $(DTB_OBJS))","")
 DTB_OBJS := $(addprefix $(obj)/dts/,$(DTB_LIST))
+endif
 
 $(obj)/Image: vmlinux FORCE
 	$(call if_changed,objcopy)

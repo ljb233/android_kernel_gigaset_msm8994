@@ -29,7 +29,11 @@
 #define CYCLES_PER_MICRO_SEC_DEFAULT 4915
 #define CCI_MAX_DELAY 1000000
 
+#ifdef GIGASET_EDIT  // davis.xu  add timeout to improve the performance. 20150730
+#define CCI_TIMEOUT msecs_to_jiffies(700)
+#else
 #define CCI_TIMEOUT msecs_to_jiffies(500)
+#endif
 
 /* TODO move this somewhere else */
 #define MSM_CCI_DRV_NAME "msm_cci"

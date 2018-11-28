@@ -217,6 +217,24 @@ enum sdc_mpm_pin_state {
 /* Timeout value to avoid infinite waiting for pwr_irq */
 #define MSM_PWR_IRQ_TIMEOUT_MS 5000
 
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+static int vreg_counts = 0;
+static int system_in_suspend = 0;
+static int mmc1_inserted_in_suspend = 0;
+static int mmc1_removed = 1; /* It was 0, should be 1*/ 
+static int mmc1_boot_status = 0;
+static int mmc1_vreg_enabled = 0;
+static int boot_no_socket = 0;
+static int boot_pwr_checked = 0;
+
+static int boot_delay_irq = 0;
+
+static int mmc1_vreg_enabled_in_recovery = 0;
+/* workqueue added */
+static struct workqueue_struct *mmc1_workqueue;
+
+#endif /*GIGASET_EDIT*/ 
 static const u32 tuning_block_64[] = {
 	0x00FF0FFF, 0xCCC3CCFF, 0xFFCC3CC3, 0xEFFEFFFE,
 	0xDDFFDFFF, 0xFBFFFBFF, 0xFF7FFFBF, 0xEFBDF777,
@@ -238,6 +256,17 @@ static const u32 tuning_block_128[] = {
 static int disable_slots;
 /* root can write, others read */
 module_param(disable_slots, int, S_IRUGO|S_IWUSR);
+
+#ifdef GIGASET_EDIT
+/* by Cesc . for tf-sim burnt */
+struct mmc_gpio_ex {
+	int ro_gpio;
+	int cd_gpio;
+	char *ro_label;
+	bool status;
+	char cd_label[0]; /* Must be last entry */
+};
+#endif
 
 /* This structure keeps information per regulator */
 struct sdhci_msm_reg_data {
@@ -360,6 +389,19 @@ struct sdhci_msm_host {
 	struct completion pwr_irq_completion;
 	struct sdhci_msm_bus_vote msm_bus_vote;
 	struct device_attribute	polling;
+#ifdef GIGASET_EDIT
+/* cesc.xu@swdp.system, 2015/03/24. add property irqcounts for SD card hot-plug */
+	int irq_counts; 
+	/*struct device_attribute	irqcounts;*/
+	int simulate_change;
+	struct device_attribute	simulating;
+
+	struct delayed_work vreg_enable_work;
+	struct delayed_work pwr_state_work; /* by Cesc */
+	struct delayed_work pwr_boot_work; /* boot without SD card */
+	struct delayed_work pwr_boot_delay_irq_work;
+	struct delayed_work pwr_boot_delay_check_work;
+#endif  /* GIGASET_EDIT */
 	u32 clk_rate; /* Keeps track of current clock rate that is set */
 	bool tuning_done;
 	bool calibration_done;
@@ -384,6 +426,496 @@ enum vdd_io_level {
 	 */
 	VDD_IO_SET_LEVEL,
 };
+
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+int mmc_gpio_get_cd_ex(struct mmc_host *host);
+
+/* by Cesc . for tf-sim burnt- begin */
+static int sdhci_msm_setup_vreg(struct sdhci_msm_pltfm_data *pdata, bool enable, bool is_init);
+
+/* delayed work*/
+static void mmc1_vreg_enable_work(struct work_struct *data)
+{
+	struct sdhci_msm_host *msm_host = container_of(data, struct sdhci_msm_host, vreg_enable_work.work);
+	struct mmc_host *host = msm_host->mmc; 
+	int ret = 0;
+
+	pr_info("%s--mmc_hostname%s\n", __func__, mmc_hostname(msm_host->mmc) );
+	
+	if ( mmc1_vreg_enabled == 1 ) {
+		ret = 0;
+	} else {
+		if ( mmc1_removed == 1 ) {
+			ret = 0;
+			pr_info("%s--mmc1_removed=1\n", __func__);
+		} else {
+			if ( boot_no_socket == 1 ) {
+				ret = 0;
+				pr_info("%s--boot_no_socket=1\n", __func__);
+			} else {
+				ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);
+				mmc1_vreg_enabled = 1;
+				if (ret)
+                			pr_info("%s--enable power failed\n", __func__);	
+			}
+		}
+	}
+
+	/* Schedule a card detection after a debounce timeout */
+	mmc_detect_change(host, msecs_to_jiffies(200));
+}
+
+static void mmc1_pwr_state_work(struct work_struct *data)
+{
+        struct sdhci_msm_host *msm_host = container_of(data, struct sdhci_msm_host, pwr_state_work.work);
+        struct mmc_host *host = msm_host->mmc;
+        int ret = 0;
+
+	pr_info("%s--host->mmc1_identified =%d\n", __func__, host->mmc1_identified );
+	pr_info("%s--mmc1_removed=%d\n", __func__, mmc1_removed);
+	if ( host->mmc1_identified == 1 ) {
+		if ( mmc1_removed == 0 ) {
+			ret = 0;
+		} else {
+			ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+			mmc1_vreg_enabled = 0;
+		}
+	} else {
+		ret = 0;
+		ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+		mmc1_vreg_enabled = 0;
+	}
+}
+
+
+static void mmc1_pwr_boot_work(struct work_struct *data)
+{
+        struct sdhci_msm_host *msm_host = container_of(data, struct sdhci_msm_host, pwr_boot_work.work);
+        struct mmc_host *host = msm_host->mmc;
+        int ret = 0;
+	
+	/*
+        pr_info("%s--mmc_hostname%s\n", __func__, mmc_hostname(msm_host->mmc) );
+	
+	if ( vreg_counts == 2 ) {
+		boot_no_socket = 1;
+	}
+	*/
+	pr_info("%s--host->mmc1_identified =%d\n", __func__, host->mmc1_identified );
+	if ( host->mmc1_identified == 1 ) {
+		ret = 0;
+	} else {
+		ret = 0;
+		/*
+		ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+		mmc1_vreg_enabled = 0;
+		*/
+	}
+}
+
+/*
+** delay irq processing of SD card
+*/
+static void mmc1_pwr_boot_delay_irq_work(struct work_struct *data)
+{
+        struct sdhci_msm_host *msm_host = container_of(data, struct sdhci_msm_host, pwr_boot_delay_irq_work.work);
+        struct mmc_host *host = msm_host->mmc;
+        int ret = 0;
+
+        pr_info("%s--mmc_hostname%s\n", __func__, mmc_hostname(msm_host->mmc) );
+
+	boot_delay_irq = 1;
+
+	if ( mmc1_removed == 1 ) {
+		ret = 0;
+		pr_info("%s--mmc1_removed=1\n", __func__);
+	} else {
+		ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);
+		mmc1_vreg_enabled = 1;
+		if (ret)
+			pr_info("%s--enable power failed\n", __func__);
+	}
+	/*
+	ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);
+	mmc1_vreg_enabled = 1;
+	if (ret)
+		pr_info("%s--enable power failed\n", __func__);
+	*/
+	/* Schedule a card detection after a debounce timeout */
+	mmc_detect_change(host, msecs_to_jiffies(200));
+}
+
+
+static void mmc1_pwr_boot_delay_check_work(struct work_struct *data)
+{
+        struct sdhci_msm_host *msm_host = container_of(data, struct sdhci_msm_host, pwr_boot_delay_check_work.work);
+        struct mmc_host *host = msm_host->mmc;
+        int ret = 0;
+
+        pr_info("%s--host->mmc1_identified =%d\n", __func__, host->mmc1_identified );
+
+	if ( vreg_counts == 0 ) {
+		boot_no_socket = 1;
+	}
+
+	if ( host->mmc1_identified == 1 ) {
+		ret = 0;
+	} else {
+		ret = 0;
+		ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+		mmc1_vreg_enabled = 0;
+	}
+}
+
+
+
+static int mmc_gpio_get_status_ex(struct mmc_host *host)
+{
+	int ret = -ENOSYS;
+	struct mmc_gpio_ex *ctx = host->slot.handler_priv;
+
+	if (!ctx || !gpio_is_valid(ctx->cd_gpio))
+		goto out;
+
+	ret = !gpio_get_value_cansleep(ctx->cd_gpio) ^
+		!!(host->caps2 & MMC_CAP2_CD_ACTIVE_HIGH);
+out:
+	return ret;
+}
+
+
+static irqreturn_t mmc_gpio_cd_irqt_ex(int irq, void *dev_id)
+{
+	/* Schedule a card detection after a debounce timeout */
+	struct sdhci_msm_host *msm_host = dev_id;
+	/*struct mmc_host *host = dev_id;*/
+	struct mmc_host *host = msm_host->mmc; 
+	struct mmc_gpio_ex *ctx = host->slot.handler_priv;
+	int status;
+	int ret = 0;
+
+	/*
+	 * In case host->ops are not yet initialized return immediately.
+	 * The card will get detected later when host driver calls
+	 * mmc_add_host() after host->ops are initialized.
+	 */
+	if (!host->ops)
+		goto out;
+
+	if (host->ops->card_event)
+		host->ops->card_event(host);
+
+	status = mmc_gpio_get_status_ex(host);
+	if (unlikely(status < 0))
+		goto out;
+
+	pr_info("%s:--status=%d\n", __func__, status);
+	pr_info("%s:--boot_delay_irq=%d\n", __func__, boot_delay_irq); /* test only */
+
+	/*host->irq_counts++;*/
+	if (status ^ ctx->status) {
+		pr_info("%s: slot status change detected- (%d -> %d), GPIO_ACTIVE_%s\n",
+				mmc_hostname(host), ctx->status, status,
+				(host->caps2 & MMC_CAP2_CD_ACTIVE_HIGH) ?
+				"HIGH" : "LOW");
+		/*ctx->status = status;*/
+
+		host->irq_counts++;
+		
+		/* sd card inserted */
+		if ( (ctx->status == 0) && (status == 1) ) {
+			pr_info("%s:--inserted\n", __func__);
+
+			mmc1_removed = 0; /* means tf inserted too*/
+			boot_no_socket = 0; /* hotplug state now */
+			
+			if ( system_in_suspend == 1 ) {
+				ret = 0;
+				mmc1_inserted_in_suspend = 1;
+			} else {
+				if ( mmc1_vreg_enabled == 1) {
+					ret = 0;
+				} else {
+					if ( boot_delay_irq == 0 ) {
+						ret = 0; /* do  nothing */
+
+					} else {
+						ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);
+                                        	mmc1_vreg_enabled = 1; 
+					}
+
+					/*
+					ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);
+					mmc1_vreg_enabled = 1; */ /* vreg is enabled now */
+				}
+				/*ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);*/
+			}
+			/*ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);*/
+			
+		}
+
+		/* sd card removed */
+		if ( (ctx->status == 1) && (status == 0) ) {
+			pr_info("%s:--removed\n", __func__);
+			
+			mmc1_removed = 1;
+			/*
+			if ( system_in_suspend == 1 ) {
+				ret = 0;
+			} else { 
+				if ( boot_delay_irq == 0 ) {
+					ret = 0; 
+				} else {
+					ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+					mmc1_vreg_enabled = 0;
+				}
+			} 
+			*/
+			ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+			mmc1_vreg_enabled = 0;
+		}
+		
+		ctx->status = status;			
+		/* Schedule a card detection after a debounce timeout */
+		mmc_detect_change(host, msecs_to_jiffies(200));
+	}else {
+		pr_info("%s:--status same value\n", __func__);
+	}
+
+	
+	
+out:
+
+	return IRQ_HANDLED;
+}
+
+static int mmc_gpio_alloc_ex(struct mmc_host *host)
+{
+	size_t len = strlen(dev_name(host->parent)) + 4;
+	struct mmc_gpio_ex *ctx;
+
+	mutex_lock(&host->slot.lock);
+
+	ctx = host->slot.handler_priv;
+	if (!ctx) {
+		/*
+		 * devm_kzalloc() can be called after device_initialize(), even
+		 * before device_add(), i.e., between mmc_alloc_host() and
+		 * mmc_add_host()
+		 */
+		ctx = devm_kzalloc(&host->class_dev, sizeof(*ctx) + 2 * len,
+				   GFP_KERNEL);
+		if (ctx) {
+			ctx->ro_label = ctx->cd_label + len;
+			snprintf(ctx->cd_label, len, "%s cd", dev_name(host->parent));
+			snprintf(ctx->ro_label, len, "%s ro", dev_name(host->parent));
+			ctx->cd_gpio = -EINVAL;
+			ctx->ro_gpio = -EINVAL;
+			host->slot.handler_priv = ctx;
+		}
+	}
+
+	mutex_unlock(&host->slot.lock);
+
+	return ctx ? 0 : -ENOMEM;
+}
+
+
+int mmc_gpio_get_ro_ex(struct mmc_host *host)
+{
+	struct mmc_gpio_ex *ctx = host->slot.handler_priv;
+
+	if (!ctx || !gpio_is_valid(ctx->ro_gpio))
+		return -ENOSYS;
+
+	return !gpio_get_value_cansleep(ctx->ro_gpio) ^
+		!!(host->caps2 & MMC_CAP2_RO_ACTIVE_HIGH);
+}
+EXPORT_SYMBOL(mmc_gpio_get_ro_ex);
+
+int mmc_gpio_get_cd_ex(struct mmc_host *host)
+{
+	struct mmc_gpio_ex *ctx = host->slot.handler_priv;
+
+	if (!ctx || !gpio_is_valid(ctx->cd_gpio))
+		return -ENOSYS;
+
+	return !gpio_get_value_cansleep(ctx->cd_gpio) ^
+		!!(host->caps2 & MMC_CAP2_CD_ACTIVE_HIGH);
+}
+EXPORT_SYMBOL(mmc_gpio_get_cd_ex);
+
+
+/**
+ * mmc_gpio_request_ro_ex - request a gpio for write-protection
+ * @host: mmc host
+ * @gpio: gpio number requested
+ *
+ * As devm_* managed functions are used in mmc_gpio_request_ro(), client
+ * drivers do not need to explicitly call mmc_gpio_free_ro() for freeing up,
+ * if the requesting and freeing are only needed at probing and unbinding time
+ * for once.  However, if client drivers do something special like runtime
+ * switching for write-protection, they are responsible for calling
+ * mmc_gpio_request_ro() and mmc_gpio_free_ro() as a pair on their own.
+ *
+ * Returns zero on success, else an error.
+ */
+int mmc_gpio_request_ro_ex(struct mmc_host *host, unsigned int gpio)
+{
+	struct mmc_gpio_ex *ctx;
+	int ret;
+
+	if (!gpio_is_valid(gpio))
+		return -EINVAL;
+
+	ret = mmc_gpio_alloc_ex(host);
+	if (ret < 0)
+		return ret;
+
+	ctx = host->slot.handler_priv;
+
+	ret = devm_gpio_request_one(&host->class_dev, gpio, GPIOF_DIR_IN,
+				    ctx->ro_label);
+	if (ret < 0)
+		return ret;
+
+	ctx->ro_gpio = gpio;
+
+	return 0;
+}
+EXPORT_SYMBOL(mmc_gpio_request_ro_ex);
+
+/**
+ * mmc_gpio_request_cd_ex - request a gpio for card-detection
+ * @host: mmc host
+ * @gpio: gpio number requested
+ *
+ * As devm_* managed functions are used in mmc_gpio_request_cd(), client
+ * drivers do not need to explicitly call mmc_gpio_free_cd() for freeing up,
+ * if the requesting and freeing are only needed at probing and unbinding time
+ * for once.  However, if client drivers do something special like runtime
+ * switching for card-detection, they are responsible for calling
+ * mmc_gpio_request_cd() and mmc_gpio_free_cd() as a pair on their own.
+ *
+ * Returns zero on success, else an error.
+ */
+int mmc_gpio_request_cd_ex(struct sdhci_msm_host *msm_host, unsigned int gpio)
+{
+	struct mmc_gpio_ex *ctx;
+	int irq = gpio_to_irq(gpio);
+	int ret;
+	struct mmc_host *host = msm_host->mmc;
+
+	ret = mmc_gpio_alloc_ex(host);
+	if (ret < 0)
+		return ret;
+
+	ctx = host->slot.handler_priv;
+
+	ret = devm_gpio_request_one(&host->class_dev, gpio, GPIOF_DIR_IN,
+				    ctx->cd_label);
+	if (ret < 0)
+		/*
+		 * don't bother freeing memory. It might still get used by other
+		 * slot functions, in any case it will be freed, when the device
+		 * is destroyed.
+		 */
+		return ret;
+
+	/*
+	 * Even if gpio_to_irq() returns a valid IRQ number, the platform might
+	 * still prefer to poll, e.g., because that IRQ number is already used
+	 * by another unit and cannot be shared.
+	 */
+	if (irq >= 0 && host->caps & MMC_CAP_NEEDS_POLL)
+		irq = -EINVAL;
+
+	ctx->cd_gpio = gpio;
+	host->slot.cd_irq = irq;
+
+	ret = mmc_gpio_get_status_ex(host);
+	if (ret < 0)
+		return ret;
+
+	ctx->status = ret;
+
+	if (irq >= 0) {
+		/* host, not msm_host 
+		ret = devm_request_threaded_irq(&host->class_dev, irq,
+			NULL, mmc_gpio_cd_irqt_ex,
+			IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+			ctx->cd_label, host); */
+		/*msm_host */
+		ret = devm_request_threaded_irq(&host->class_dev, irq,
+			NULL, mmc_gpio_cd_irqt_ex,
+			IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+			ctx->cd_label, msm_host);
+		if (ret < 0)
+			irq = ret;
+	}
+
+	if (irq < 0)
+		host->caps |= MMC_CAP_NEEDS_POLL;
+
+	return 0;
+}
+EXPORT_SYMBOL(mmc_gpio_request_cd_ex);
+
+
+
+/**
+ * mmc_gpio_free_ro_ex - free the write-protection gpio
+ * @host: mmc host
+ *
+ * It's provided only for cases that client drivers need to manually free
+ * up the write-protection gpio requested by mmc_gpio_request_ro().
+ */
+void mmc_gpio_free_ro_ex(struct mmc_host *host)
+{
+	struct mmc_gpio_ex *ctx = host->slot.handler_priv;
+	int gpio;
+
+	if (!ctx || !gpio_is_valid(ctx->ro_gpio))
+		return;
+
+	gpio = ctx->ro_gpio;
+	ctx->ro_gpio = -EINVAL;
+
+	devm_gpio_free(&host->class_dev, gpio);
+}
+EXPORT_SYMBOL(mmc_gpio_free_ro_ex);
+
+
+/**
+ * mmc_gpio_free_cd_ex - free the card-detection gpio
+ * @host: mmc host
+ *
+ * It's provided only for cases that client drivers need to manually free
+ * up the card-detection gpio requested by mmc_gpio_request_cd().
+ */
+void mmc_gpio_free_cd_ex(struct mmc_host *host)
+{
+	struct mmc_gpio_ex *ctx = host->slot.handler_priv;
+	int gpio;
+
+	if (!ctx || !gpio_is_valid(ctx->cd_gpio))
+		return;
+
+	if (host->slot.cd_irq >= 0) {
+		devm_free_irq(&host->class_dev, host->slot.cd_irq, host);
+		host->slot.cd_irq = -EINVAL;
+	}
+
+	gpio = ctx->cd_gpio;
+	ctx->cd_gpio = -EINVAL;
+
+	devm_gpio_free(&host->class_dev, gpio);
+}
+EXPORT_SYMBOL(mmc_gpio_free_cd_ex);
+
+/* by Cesc . for tf-sim burnt- end */
+#endif /*GIGASET_EDIT*/ 
 
 /* MSM platform specific tuning */
 static inline int msm_dll_poll_ck_out_en(struct sdhci_host *host,
@@ -1576,9 +2108,22 @@ struct sdhci_msm_pltfm_data *sdhci_msm_populate_pdata(struct device *dev,
 	}
 
 	pdata->status_gpio = of_get_named_gpio_flags(np, "cd-gpios", 0, &flags);
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/13. added. add TF support in recovery mode after changing gpio to gpio69 */
+	if (gpio_is_valid(pdata->status_gpio) & !(flags & OF_GPIO_ACTIVE_LOW)) {
+		/* by Cesc */
+        	if ( bootmode_flag == 2 ) {
+			pdata->caps2 &= 0<<10;
+			pr_info("%s--pdata->caps2=%d\n", __func__, pdata->caps2);
+        	} else {
+			pdata->caps2 |= MMC_CAP2_CD_ACTIVE_HIGH;
+			pr_info("%s---pdata->caps2=%d\n", __func__, pdata->caps2);
+		}
+	}
+#else
 	if (gpio_is_valid(pdata->status_gpio) & !(flags & OF_GPIO_ACTIVE_LOW))
 		pdata->caps2 |= MMC_CAP2_CD_ACTIVE_HIGH;
-
+#endif /*GIGASET_EDIT*/ 
 	of_property_read_u32(np, "qcom,bus-width", &bus_width);
 	if (bus_width == 8)
 		pdata->mmc_bus_width = MMC_CAP_8_BIT_DATA;
@@ -2095,6 +2640,10 @@ static int sdhci_msm_setup_vreg(struct sdhci_msm_pltfm_data *pdata,
 	int ret = 0, i;
 	struct sdhci_msm_slot_reg_data *curr_slot;
 	struct sdhci_msm_reg_data *vreg_table[2];
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/18. added. add more log message */
+	int is_slot1 = 0;
+#endif /*GIGASET_EDIT*/ 
 
 	curr_slot = pdata->vreg_data;
 	if (!curr_slot) {
@@ -2103,6 +2652,16 @@ static int sdhci_msm_setup_vreg(struct sdhci_msm_pltfm_data *pdata,
 		goto out;
 	}
 
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/18. added. add more log message */
+	if (gpio_is_valid(pdata->status_gpio)) {
+		is_slot1 = 1;
+		vreg_counts++;
+		pr_info("%s:,enable=%s,is_slot1=%d --by Cesc,vreg_counts=%d\n", __func__,enable ? "en" : "dis", is_slot1, vreg_counts);
+	}
+	/*pr_info("%s:,enable=%s,is_slot1=%d --by Cesc,%d\n", __func__,enable ? "en" : "dis", is_slot1, vreg_counts); by Cesc*/  
+#endif /*GIGASET_EDIT*/ 
+		
 	vreg_table[0] = curr_slot->vdd_data;
 	vreg_table[1] = curr_slot->vdd_io_data;
 
@@ -2169,7 +2728,19 @@ static int sdhci_msm_vreg_init(struct device *dev,
 		if (ret)
 			goto vdd_reg_deinit;
 	}
+
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/19. added. don't reset ldo21 for SD card */
+	/* LDO21 disabled in SBL, no need to do reset. by Cesc */	
+	if ( pdata->status_gpio ) {
+		ret = 0;
+	} else {
+		ret = sdhci_msm_vreg_reset(pdata);
+	}
+#else
 	ret = sdhci_msm_vreg_reset(pdata);
+#endif /*GIGASET_EDIT*/
+
 	if (ret)
 		dev_err(dev, "vreg reset failed (%d)\n", ret);
 	goto out;
@@ -2268,6 +2839,16 @@ static irqreturn_t sdhci_msm_pwr_irq(int irq, void *data)
 	pr_debug("%s: Received IRQ(%d), status=0x%x\n",
 		mmc_hostname(msm_host->mmc), irq, irq_status);
 
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+	/* mmc1 check in boot */
+	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
+		if ( irq_status == 9 ) {
+			mmc1_boot_status = 9;
+		}
+	}
+#endif /*GIGASET_EDIT*/ 
+
 	/* Clear the interrupt */
 	writeb_relaxed(irq_status, (msm_host->core_mem + CORE_PWRCTL_CLEAR));
 	/*
@@ -2280,7 +2861,27 @@ static irqreturn_t sdhci_msm_pwr_irq(int irq, void *data)
 
 	/* Handle BUS ON/OFF*/
 	if (irq_status & CORE_PWRCTL_BUS_ON) {
+/* by Cesc for recovery moutn */
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */	
+/*cesc.xu@swdp.system, 2015/06/13. modified. add TF support in recovery mode after changing gpio to gpio69 */
+		if (gpio_is_valid(msm_host->pdata->status_gpio)) {
+			if ( bootmode_flag == 2 ) {
+				if ( mmc1_vreg_enabled_in_recovery == 0 ) {
+					ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);
+					mmc1_vreg_enabled_in_recovery = 1;
+				} else {
+					ret = 0;
+				}
+			} else {
+				ret = 0;
+			}
+		} else {
+			ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false); 
+		}
+#else		
 		ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);
+#endif /*GIGASET_EDIT*/ 		
 		if (!ret) {
 			ret = sdhci_msm_setup_pins(msm_host->pdata, true);
 			ret |= sdhci_msm_set_vdd_io_vol(msm_host->pdata,
@@ -2295,7 +2896,23 @@ static irqreturn_t sdhci_msm_pwr_irq(int irq, void *data)
 		io_level = REQ_IO_HIGH;
 	}
 	if (irq_status & CORE_PWRCTL_BUS_OFF) {
+/* by Cesc for recovery moutn */
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */	
+/*cesc.xu@swdp.system, 2015/06/13. modified. add TF support in recovery mode after changing gpio to gpio69 */
+		if (gpio_is_valid(msm_host->pdata->status_gpio)) {
+			if ( bootmode_flag == 2 ) {
+				ret = 0;
+				/*ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false); */
+			} else {
+				ret = 0;
+			}
+                } else {
+                        ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+                }
+#else		
 		ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+#endif /*GIGASET_EDIT*/		
 		if (!ret) {
 			ret = sdhci_msm_setup_pins(msm_host->pdata, false);
 			ret |= sdhci_msm_set_vdd_io_vol(msm_host->pdata,
@@ -2399,6 +3016,100 @@ store_polling(struct device *dev, struct device_attribute *attr,
 	}
 	return count;
 }
+
+
+#ifdef GIGASET_EDIT
+//cesc.xu@swdp.system, 2015/03/24. add SD card support. add property simulating for SD card hot-plug
+static ssize_t
+show_simulating(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct sdhci_host *host = dev_get_drvdata(dev);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+	int simulate;
+	unsigned long flags;
+
+        pr_info("%s: --\n", __func__);
+	
+	spin_lock_irqsave(&host->lock, flags);
+	simulate = msm_host->simulate_change;
+	spin_unlock_irqrestore(&host->lock, flags);
+
+        pr_info("msm_host->simulate_change=%d: --\n", msm_host->simulate_change);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", simulate);
+}
+
+static ssize_t
+store_simulating(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	struct sdhci_host *host = dev_get_drvdata(dev);
+	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
+	struct sdhci_msm_host *msm_host = pltfm_host->priv;
+	struct mmc_host *mmc_host = msm_host->mmc;
+	int value;
+	unsigned long flags;
+	int ret; /* by Cesc */
+
+        pr_info("%s: --\n", __func__);
+	
+	if (!kstrtou32(buf, 0, &value)) {
+		spin_lock_irqsave(&host->lock, flags);
+		if (value) {
+		    msm_host->simulate_change = value;
+		    /*mmc_detect_change(host->mmc, 0);*/
+		} else {
+		    msm_host->simulate_change = 0;
+		}
+		spin_unlock_irqrestore(&host->lock, flags);
+	}
+        pr_info("msm_host->simulate_change=%d:--\n", msm_host->simulate_change);
+	/*by Cesc*/
+        if ( msm_host->simulate_change == 3 ) {
+                pr_info("%s: 3--mmc1 removed\n", __func__);
+		ret = 0;
+		
+        }
+        if ( msm_host->simulate_change == 4 ) {
+                pr_info("%s: 4--mmc1 inserted\n", __func__);
+		/*
+		pr_info("%s--curr_pwr_state=%d\n", __func__, msm_host->curr_pwr_state);
+		if ( msm_host->curr_pwr_state == REQ_BUS_OFF ) {
+			ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+			mmc1_vreg_enabled = 0;
+			if (ret)
+				pr_info("%s--enable power failed\n", __func__);
+		}*/
+		pr_info("%s--mmc_host->mmc1_identified =%d\n", __func__, mmc_host->mmc1_identified );
+		if ( mmc_host->mmc1_identified == 1 ) {
+			ret = 0;
+		} else {
+			ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+			mmc1_vreg_enabled = 0;
+			if (ret)
+                                pr_info("%s--enable power failed\n", __func__);
+		}
+
+
+        }
+
+	/* boot without SD card*/
+	if ( msm_host->simulate_change == 9) {
+		pr_info("%s: 9--mmc1 boot no TF check\n", __func__);
+		if ( boot_pwr_checked == 0 ) {
+			queue_delayed_work(system_nrt_wq, &msm_host->pwr_boot_work, 9*HZ); /* 8 is not so good. longer time ?*/
+			boot_pwr_checked = 1;
+			
+			queue_delayed_work(system_nrt_wq, &msm_host->pwr_boot_delay_irq_work, 20*HZ); /* long enough to get to the end of boot? */
+			queue_delayed_work(system_nrt_wq, &msm_host->pwr_boot_delay_check_work, 23*HZ);
+		}
+	}
+
+	return count;
+}
+#endif /* GIGASET_EDIT */
+
 
 static ssize_t
 show_sdhci_max_bus_bw(struct device *dev, struct device_attribute *attr,
@@ -3216,6 +3927,11 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	pltfm_host->priv = msm_host;
 	msm_host->mmc = host->mmc;
 	msm_host->pdev = pdev;
+#ifdef GIGASET_EDIT
+/* cesc.xu@swdp.system, 2015/03/24. add SD card support. add property simulating for SD card hot-plug */
+        msm_host->irq_counts = 0; 
+        msm_host->simulate_change = 0; 
+#endif /* GIGASET_EDIT */
 
 	/* Extract platform data */
 	if (pdev->dev.of_node) {
@@ -3474,6 +4190,11 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	msm_host->mmc->caps2 |= MMC_CAP2_CORE_PM;
 	msm_host->mmc->caps2 |= MMC_CAP2_SANITIZE;
 
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+	msm_host->mmc->slot_num = 0;
+	msm_host->mmc->mmc1_identified = 0;
+#endif /*GIGASET_EDIT*/ 
 	if (msm_host->pdata->nonremovable)
 		msm_host->mmc->caps |= MMC_CAP_NONREMOVABLE;
 
@@ -3494,6 +4215,45 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		 * configuring it as an IRQ. Otherwise, it can be in some
 		 * weird/inconsistent state resulting in flood of interrupts.
 		 */
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+		INIT_DELAYED_WORK(&msm_host->vreg_enable_work, mmc1_vreg_enable_work);
+		INIT_DELAYED_WORK(&msm_host->pwr_state_work, mmc1_pwr_state_work);
+		INIT_DELAYED_WORK(&msm_host->pwr_boot_work, mmc1_pwr_boot_work);
+		INIT_DELAYED_WORK(&msm_host->pwr_boot_delay_irq_work, mmc1_pwr_boot_delay_irq_work);
+		INIT_DELAYED_WORK(&msm_host->pwr_boot_delay_check_work, mmc1_pwr_boot_delay_check_work);
+		
+		sdhci_msm_setup_pins(msm_host->pdata, true);
+		/*
+		 * This delay is needed for stabilizing the card detect GPIO
+		 * line after changing the pull configs.
+		 */
+		usleep_range(10000, 10500);
+		
+		 /* by Cesc.*/
+		msm_host->mmc->irq_counts = 0;
+		/* by Cesc */
+       		msm_host->mmc->slot_num = 1; /* mmc1 */
+		msm_host->mmc->mmc1_identified = 0;
+		/*
+		ret = mmc_gpio_request_cd_ex(msm_host->mmc,
+				msm_host->pdata->status_gpio);*/
+		ret = mmc_gpio_request_cd_ex(msm_host,
+				msm_host->pdata->status_gpio);
+		if (ret) {
+			dev_err(&pdev->dev, "%s: Failed to request card detection IRQ %d\n",
+					__func__, ret);
+			goto vreg_deinit;
+		}
+
+		/* workqueue for power processing after resuming */
+                mmc1_workqueue = alloc_ordered_workqueue("mmc1pwr", 0);
+                if ( !mmc1_workqueue ) {
+                        ret = -ENOMEM;
+                        goto free_cd_gpio;
+                }
+
+#else
 		sdhci_msm_setup_pins(msm_host->pdata, true);
 
 		/*
@@ -3508,6 +4268,9 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 					__func__, ret);
 			goto vreg_deinit;
 		}
+					
+#endif /*GIGASET_EDIT*/ 
+
 	}
 
 	if ((sdhci_readl(host, SDHCI_CAPABILITIES) & SDHCI_CAN_64BIT) &&
@@ -3545,7 +4308,13 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	ret = sdhci_add_host(host);
 	if (ret) {
 		dev_err(&pdev->dev, "Add host failed (%d)\n", ret);
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+		goto destroy_mmc1_workqueue;
+#else
 		goto free_cd_gpio;
+#endif /*GIGASET_EDIT*/ 		
+		
 	}
 
 	msm_host->msm_bus_vote.max_bus_bw.show = show_sdhci_max_bus_bw;
@@ -3568,6 +4337,21 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 		if (ret)
 			goto remove_max_bus_bw_file;
 	}
+#ifdef GIGASET_EDIT
+/* cesc.xu@swdp.system, 2015/03/24. add SD card support. add property simulating for SD card hot-plug */
+        /* simulate sd card change. */
+	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
+		msm_host->simulating.show = show_simulating;
+		msm_host->simulating.store = store_simulating;
+		sysfs_attr_init(&msm_host->simulating.attr);
+		msm_host->simulating.attr.name = "simulating";
+		msm_host->simulating.attr.mode = S_IRUGO | S_IWUSR;
+		ret = device_create_file(&pdev->dev, &msm_host->simulating);
+		if (ret)
+			goto remove_polling_file;
+	}
+#endif /* GIGASET_EDIT */
+
 	ret = pm_runtime_set_active(&pdev->dev);
 	if (ret)
 		pr_err("%s: %s: pm_runtime_set_active failed: err: %d\n",
@@ -3601,14 +4385,30 @@ static int sdhci_msm_probe(struct platform_device *pdev)
 	/* Successful initialization */
 	goto out;
 
+#ifdef GIGASET_EDIT
+/* cesc.xu@swdp.system, 2015/03/24. add SD card support. add property simulating for SD card hot-plug */
+remove_polling_file: 
+        device_remove_file(&pdev->dev, &msm_host->polling);
+#endif /* GIGASET_EDIT */
 remove_max_bus_bw_file:
 	device_remove_file(&pdev->dev, &msm_host->msm_bus_vote.max_bus_bw);
 remove_host:
 	dead = (readl_relaxed(host->ioaddr + SDHCI_INT_STATUS) == 0xffffffff);
 	sdhci_remove_host(host, dead);
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+destroy_mmc1_workqueue:
+	destroy_workqueue(mmc1_workqueue);
+#endif /*GIGASET_EDIT*/ 
 free_cd_gpio:
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+	if (gpio_is_valid(msm_host->pdata->status_gpio))
+		mmc_gpio_free_cd_ex(msm_host->mmc); /* by Cesc */
+#else
 	if (gpio_is_valid(msm_host->pdata->status_gpio))
 		mmc_gpio_free_cd(msm_host->mmc);
+#endif /* GIGASET_EDIT */		
 	if (sdhci_is_valid_gpio_wakeup_int(msm_host))
 		free_irq(msm_host->pdata->sdiowakeup_irq, host);
 vreg_deinit:
@@ -3651,6 +4451,22 @@ static int sdhci_msm_remove(struct platform_device *pdev)
 	pr_debug("%s: %s\n", dev_name(&pdev->dev), __func__);
 	if (!gpio_is_valid(msm_host->pdata->status_gpio))
 		device_remove_file(&pdev->dev, &msm_host->polling);
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+	if (gpio_is_valid(msm_host->pdata->status_gpio))
+		device_remove_file(&pdev->dev, &msm_host->simulating);
+
+	/* delayed work*/
+	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
+		cancel_delayed_work_sync(&msm_host->vreg_enable_work);
+		cancel_delayed_work_sync(&msm_host->pwr_state_work);
+		cancel_delayed_work_sync(&msm_host->pwr_boot_work);
+		cancel_delayed_work_sync(&msm_host->pwr_boot_delay_irq_work);
+		cancel_delayed_work_sync(&msm_host->pwr_boot_delay_check_work);
+
+		destroy_workqueue(mmc1_workqueue);
+	}
+#endif /* GIGASET_EDIT */
 	device_remove_file(&pdev->dev, &msm_host->msm_bus_vote.max_bus_bw);
 	sdhci_remove_host(host, dead);
 	pm_runtime_disable(&pdev->dev);
@@ -3662,9 +4478,14 @@ static int sdhci_msm_remove(struct platform_device *pdev)
 	if (sdhci_is_valid_gpio_wakeup_int(msm_host))
 		free_irq(msm_host->pdata->sdiowakeup_irq, host);
 
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+	if (gpio_is_valid(msm_host->pdata->status_gpio))
+		mmc_gpio_free_cd_ex(msm_host->mmc); /* by Cesc */
+#else
 	if (gpio_is_valid(msm_host->pdata->status_gpio))
 		mmc_gpio_free_cd(msm_host->mmc);
-
+#endif /* GIGASET_EDIT */
 	sdhci_msm_vreg_init(&pdev->dev, msm_host->pdata, false);
 
 	sdhci_msm_setup_pins(pdata, true);
@@ -3791,9 +4612,41 @@ static int sdhci_msm_suspend(struct device *dev)
 	struct sdhci_msm_host *msm_host = pltfm_host->priv;
 	int ret = 0;
 
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
+		pr_info("%s--\n", __func__);
+		system_in_suspend = 1;
+		
+		/*
+		ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false); 
+		mmc1_vreg_enabled = 0;
+		if ( ret )
+			pr_info("%s--disable power failed\n", __func__);
+		*/
+		if ( mmc1_removed == 1 ) {
+			ret = sdhci_msm_setup_vreg(msm_host->pdata, false, false);
+			mmc1_vreg_enabled = 0;
+			if ( ret )
+				pr_info("%s--disable power failed\n", __func__);
+		} else {
+			ret =  0;
+		}
+		
+		/* no need to free irq here?
+		mmc_gpio_free_cd_ex(msm_host->mmc); by Cesc */
+		/*mmc_gpio_free_cd(msm_host->mmc);*/
+
+		/*flush_workqueue(mmc1_workqueue); is it needed? */
+		cancel_delayed_work_sync(&msm_host->pwr_state_work);
+		cancel_delayed_work_sync(&msm_host->vreg_enable_work);
+	}
+	
+#else
 	if (gpio_is_valid(msm_host->pdata->status_gpio))
 		mmc_gpio_free_cd(msm_host->mmc);
 
+#endif /*GIGASET_EDIT*/ 
 	if (pm_runtime_suspended(dev)) {
 		pr_debug("%s: %s: already runtime suspended\n",
 		mmc_hostname(host->mmc), __func__);
@@ -3811,7 +4664,37 @@ static int sdhci_msm_resume(struct device *dev)
 	struct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);
 	struct sdhci_msm_host *msm_host = pltfm_host->priv;
 	int ret = 0;
+#ifdef GIGASET_EDIT
+/*cesc.xu@swdp.system, 2015/06/01. added. add gpio69 for TF support */
+	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
+		pr_info("%s--\n", __func__);
+		system_in_suspend = 0;
+		/*
+		ret = sdhci_msm_setup_vreg(msm_host->pdata, true, false);
+		if (ret)
+			pr_info("%s--enable power failed\n", __func__); moved to mmc1_vreg_enable_work*/
+		/*
+		ret = mmc_gpio_request_cd_ex(msm_host->mmc,
+				msm_host->pdata->status_gpio); */
+		/* no need to request irq here
+		ret = mmc_gpio_request_cd_ex(msm_host,
+				msm_host->pdata->status_gpio); */
+		ret = 0;
+		if (ret)
+			pr_err("%s: %s: Failed to request card detection IRQ %d\n",
+					mmc_hostname(host->mmc), __func__, ret);
+		
+		/*schedule_delayed_work(&wake_work, 3*HZ); */
+		queue_delayed_work(mmc1_workqueue, &msm_host->vreg_enable_work, msecs_to_jiffies(4000) ); /* msecs_to_jiffies(3000)); 3*HZ,  wait longer? */
+		queue_delayed_work(mmc1_workqueue, &msm_host->pwr_state_work, msecs_to_jiffies(7000) ); /* 6*HZ longer time ? msecs_to_jiffies(3600) or longer ?*/
+		/* use mmc1_workqueue 
+		queue_delayed_work(system_nrt_wq, &msm_host->vreg_enable_work, 3*HZ );
+		queue_delayed_work(system_nrt_wq, &msm_host->pwr_state_work, 6*HZ);  */
 
+
+	}
+
+#else
 	if (gpio_is_valid(msm_host->pdata->status_gpio)) {
 		ret = mmc_gpio_request_cd(msm_host->mmc,
 				msm_host->pdata->status_gpio);
@@ -3819,6 +4702,8 @@ static int sdhci_msm_resume(struct device *dev)
 			pr_err("%s: %s: Failed to request card detection IRQ %d\n",
 					mmc_hostname(host->mmc), __func__, ret);
 	}
+	
+#endif /*GIGASET_EDIT*/ 
 
 	if (pm_runtime_suspended(dev)) {
 		pr_debug("%s: %s: runtime suspended, defer system resume\n",

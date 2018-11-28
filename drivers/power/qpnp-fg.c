@@ -34,6 +34,12 @@
 #include <linux/string_helpers.h>
 #include <linux/alarmtimer.h>
 #include <linux/qpnp-revid.h>
+#ifdef GIGASET_EDIT
+/* byron.ran@swdp.driver, 2015/05/19,  add for distinguish EVT DVT...*/
+#include <linux/init.h>
+#include <linux/qpnp/qpnp-adc.h>
+#endif
+
 
 /* Register offsets */
 
@@ -189,9 +195,16 @@ enum fg_mem_data_index {
 static struct fg_mem_setting settings[FG_MEM_SETTING_MAX] = {
 	/*       ID                    Address, Offset, Value*/
 	SETTING(SOFT_COLD,       0x454,   0,      100),
+#ifndef GIGASET_EDIT
+/* byron.ran@swdp.driver, 2015/03/11, modify for temp */
 	SETTING(SOFT_HOT,        0x454,   1,      400),
 	SETTING(HARD_COLD,       0x454,   2,      50),
 	SETTING(HARD_HOT,        0x454,   3,      450),
+#else
+	SETTING(SOFT_HOT,        0x454,   1,      420),
+	SETTING(HARD_COLD,       0x454,   2,      0),
+	SETTING(HARD_HOT,        0x454,   3,      500),
+#endif
 	SETTING(RESUME_SOC,      0x45C,   1,      0),
 	SETTING(BCL_LM_THRESHOLD, 0x47C,   2,      50),
 	SETTING(BCL_MH_THRESHOLD, 0x47C,   3,      752),
@@ -437,6 +450,11 @@ struct fg_chip {
 	struct fg_rslow_data	rslow_comp;
 	/* interleaved memory access */
 	u16			*offset;
+#ifdef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/06/19, add for Adjust the charging current according to the temperature */
+	int			last_temp;
+	struct qpnp_vadc_chip	*vadc_dev;
+#endif
 };
 
 /* FG_MEMIF DEBUGFS structures */
@@ -1174,8 +1192,16 @@ static int get_prop_capacity(struct fg_chip *chip)
 	u8 cap[2];
 	int rc, capacity = 0, tries = 0;
 
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/10/31, fix the bug that the capacity is allways 100% */
 	if (chip->battery_missing)
 		return MISSING_CAPACITY;
+#endif
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/10/06, fix the bug that report 50% capacity */
+	if (!chip->profile_loaded && !chip->use_otp_profile)
+		return DEFAULT_CAPACITY;
+#endif
 #ifndef CONFIG_MACH_PM9X
 	if (!chip->profile_loaded && !chip->use_otp_profile)
 		return DEFAULT_CAPACITY;
@@ -1562,6 +1588,29 @@ out:
 		msecs_to_jiffies(resched_ms));
 }
 
+#ifdef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/08/29, add for read the quiet thermal temp */
+static int get_quiet_thermal_degree_celsius(struct fg_chip *chip)
+{
+	int rc = 0;
+	struct qpnp_vadc_result results;
+
+	if (IS_ERR_OR_NULL(chip->vadc_dev)) {
+		chip->vadc_dev = qpnp_get_vadc(chip->dev, "thermal");
+		if (IS_ERR(chip->vadc_dev))
+			return PTR_ERR(chip->vadc_dev);
+	}
+
+	rc = qpnp_vadc_read(chip->vadc_dev, LR_MUX9_PU1_AMUX_THM5, &results);
+	if (rc) {
+		pr_err("Unable to read quiet thermal rc=%d\n", rc);
+		return 0;
+	} else {
+		return results.physical;
+	}
+}
+#endif
+
 #define BATT_TEMP_OFFSET	3
 #define BATT_TEMP_CNTRL_MASK	0x17
 #define BATT_TEMP_ON		0x16
@@ -1577,6 +1626,11 @@ static void update_temp_data(struct work_struct *work)
 	struct fg_chip *chip = container_of(work,
 				struct fg_chip,
 				update_temp_work.work);
+#ifdef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/06/19, add for Adjust the charging current according to the temperature */
+	int quiet_temp;
+	union power_supply_propval pval = {0, };
+#endif
 
 	fg_stay_awake(&chip->update_temp_wakeup_source);
 	if (chip->sw_rbias_ctrl) {
@@ -1622,6 +1676,41 @@ wait:
 	if (fg_debug_mask & FG_MEM_DEBUG_READS)
 		pr_info("BATT_TEMP %d %d\n", temp, fg_data[0].value);
 
+#ifdef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/06/19, add for Adjust the charging current according to the temperature */
+	quiet_temp = get_quiet_thermal_degree_celsius(chip);
+
+	if(quiet_temp > 42 && chip->last_temp <= 42) {
+		if (!chip->batt_psy && chip->batt_psy_name)
+			chip->batt_psy = power_supply_get_by_name(chip->batt_psy_name);
+
+		pval.intval = 600 * 1000;
+
+		if (chip->batt_psy)
+			chip->batt_psy->set_property(chip->batt_psy,
+					POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX, &pval);
+
+		pr_info("Change the max charging current to 0.5A\n");
+
+	} else if(quiet_temp < 40 && chip->last_temp >= 40) {
+		if (!chip->batt_psy && chip->batt_psy_name)
+			chip->batt_psy = power_supply_get_by_name(chip->batt_psy_name);
+
+		pval.intval = 3000 * 1000;
+
+		if (chip->batt_psy)
+			chip->batt_psy->set_property(chip->batt_psy,
+					POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX, &pval);
+
+		pr_info("Change the max charging current to 3A\n");
+	}
+
+	if (fg_debug_mask & FG_STATUS)
+		pr_info("Quiet Thermal is: %d, last temp is: %d\n", quiet_temp, chip->last_temp);
+
+	chip->last_temp = quiet_temp;
+#endif
+
 	get_current_time(&chip->last_temp_update_time);
 
 out:
@@ -1664,6 +1753,10 @@ static int fg_set_resume_soc(struct fg_chip *chip, u8 threshold)
 	address = settings[FG_MEM_RESUME_SOC].address;
 	offset = settings[FG_MEM_RESUME_SOC].offset;
 
+#ifdef GIGASET_EDIT
+/* byron.ran@swdp.driver, 2015/11/23, set over 99.x percent, make it re-charging before capacity drop below 100% */
+	threshold = 254;
+#endif
 	rc = fg_mem_masked_write(chip, address, 0xFF, threshold, offset);
 
 	if (rc)
@@ -3428,12 +3521,28 @@ wait:
 
 	profile_node = of_batterydata_get_best_profile(batt_node, "bms",
 							fg_batt_type);
+#ifndef GIGASET_EDIT
+/* byron.ran@swdp.driver, 2015/06/18, if ADC the battery id not correct, use default */
 	if (!profile_node) {
 		pr_err("couldn't find profile handle\n");
 		old_batt_type = default_batt_type;
 		rc = -ENODATA;
 		goto fail;
 	}
+#else
+	if (!profile_node) {
+		pr_err("couldn't find profile by battery id, use default\n");
+		if (device_version >= DEVICE_VERSION_17427 && device_version <= DEVICE_VERSION_17427_MP) {
+			fg_batt_type = "x9_w_200k_3875mah";
+			pr_info("Fix the battery profile x9_w_200k_3875mah");
+		} else {
+			fg_batt_type = "x9_w_150k_3000mah";
+			pr_info("Fix the battery profile x9_w_150k_3000mah");
+		}
+		profile_node = of_batterydata_get_best_profile(batt_node, "bms",
+							fg_batt_type);
+	}
+#endif
 
 	/* read rslow compensation values if they're available */
 	rc = of_property_read_u32(profile_node, "qcom,chg-rs-to-rslow",
@@ -5012,6 +5121,11 @@ static int fg_probe(struct spmi_device *spmi)
 
 	schedule_work(&chip->init_work);
 
+#ifdef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/08/29, add for Adjust the charging current according to the temperature */
+	chip->last_temp = get_quiet_thermal_degree_celsius(chip);
+#endif
+
 	pr_info("FG Probe success - FG Revision DIG:%d.%d ANA:%d.%d PMIC subtype=%d\n",
 		chip->revision[DIG_MAJOR], chip->revision[DIG_MINOR],
 		chip->revision[ANA_MAJOR], chip->revision[ANA_MINOR],
@@ -5085,8 +5199,11 @@ static int fg_suspend(struct device *dev)
 {
 	struct fg_chip *chip = dev_get_drvdata(dev);
 
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/09/18, delete for update sram data immediately */
 	if (!chip->sw_rbias_ctrl)
 		return 0;
+#endif
 
 	cancel_delayed_work(&chip->update_temp_work);
 	cancel_delayed_work(&chip->update_sram_data);
@@ -5098,8 +5215,11 @@ static int fg_resume(struct device *dev)
 {
 	struct fg_chip *chip = dev_get_drvdata(dev);
 
+#ifndef GIGASET_EDIT
+/*byron.ran@swdp.driver, 2015/09/18, delete for update sram data immediately */
 	if (!chip->sw_rbias_ctrl)
 		return 0;
+#endif
 
 	check_and_update_sram_data(chip);
 	return 0;

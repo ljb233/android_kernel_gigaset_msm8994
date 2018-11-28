@@ -9,7 +9,9 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  */
-
+#ifdef GIGASET_EDIT
+#include <linux/init.h>
+#endif
 #include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/of.h>
@@ -30,6 +32,10 @@
 #define MIN_REFRESH_RATE 30
 #define DEFAULT_MDP_TRANSFER_TIME 14000
 
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/06/27 fix CTS framerate issue ,supply by york.zhang
+#define DEFAULT_MDP_TRANSFER_TIME 14000
+#endif 
 DEFINE_LED_TRIGGER(bl_led_trigger);
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
@@ -570,6 +576,11 @@ static void mdss_dsi_panel_switch_mode(struct mdss_panel_data *pdata,
 	mdss_dsi_panel_cmds_send(ctrl_pdata, pcmds, flags);
 }
 
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/04/30 fix min bl level 
+extern int my_panel_id;
+#endif
+
 static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 							u32 bl_level)
 {
@@ -580,6 +591,16 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 		pr_err("%s: Invalid input data\n", __func__);
 		return;
 	}
+
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/10/19 fix 427 min bl level 
+	if((device_version>=DEVICE_VERSION_17427_DVT)&&(device_version<=DEVICE_VERSION_17427_MP))	
+	{ 
+		if((bl_level>0)&&(bl_level<50))
+		bl_level=50;	//6 lux  ; 55:7lux; 70 :8 lux	
+	}
+#endif
+//pr_err("[lwj]%s:--backlight test--bl_level=%d--2\n", __func__,bl_level);
 
 	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,
 				panel_data);

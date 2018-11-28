@@ -117,6 +117,9 @@ enum mdss_mdp_block_type {
 	MDSS_MDP_BLOCK_MAX
 };
 
+#ifndef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/11/12 qcom patch:fix camera preview issue 
+
 enum mdss_mdp_csc_type {
 	MDSS_MDP_CSC_RGB2RGB,
 	MDSS_MDP_CSC_YUV2RGB,
@@ -124,6 +127,19 @@ enum mdss_mdp_csc_type {
 	MDSS_MDP_CSC_YUV2YUV,
 	MDSS_MDP_MAX_CSC
 };
+#else
+enum mdss_mdp_csc_type {
+	MDSS_MDP_CSC_YUV2RGB_601L,
+	MDSS_MDP_CSC_YUV2RGB_601FR,
+	MDSS_MDP_CSC_YUV2RGB_709L,
+	MDSS_MDP_CSC_RGB2YUV_601L,
+	MDSS_MDP_CSC_RGB2YUV_601FR,
+	MDSS_MDP_CSC_RGB2YUV_709L,
+ 	MDSS_MDP_CSC_YUV2YUV,
+	MDSS_MDP_CSC_RGB2RGB,
+ 	MDSS_MDP_MAX_CSC
+};
+#endif
 
 enum mdp_wfd_blk_type {
 	MDSS_MDP_WFD_SHARED = 0,
@@ -408,7 +424,11 @@ struct pp_hist_col_info {
 	spinlock_t hist_lock;
 	char __iomem *base;
 	u32 intr_shift;
+	
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/10/16 debug lcm dump ,patch from qcom 	
 	u32 disp_num;
+#endif
 };
 
 struct mdss_mdp_ad {
@@ -536,12 +556,33 @@ struct mdss_mdp_pipe {
 	struct mdp_scale_data scale;
 	u8 chroma_sample_h;
 	u8 chroma_sample_v;
+	
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/11/12 qcom patch:fix camera preview issue 
+	u8 csc_coeff_set;
+#endif
 };
 
 struct mdss_mdp_writeback_arg {
 	struct mdss_mdp_data *data;
 	void *priv_data;
 };
+
+#ifdef GIGASET_EDIT
+//jowen.li@swdp.system, 2015/11/12 qcom patch:fix camera preview issue 
+static inline uint8_t pp_vig_csc_pipe_val(struct mdss_mdp_pipe *pipe)
+{
+	switch (pipe->csc_coeff_set) {
+	case MDP_CSC_ITU_R_601:
+		return MDSS_MDP_CSC_YUV2RGB_601L;
+	case MDP_CSC_ITU_R_601_FR:
+		return MDSS_MDP_CSC_YUV2RGB_601FR;
+	case MDP_CSC_ITU_R_709:
+	default:
+		return  MDSS_MDP_CSC_YUV2RGB_709L;
+	}
+}
+#endif
 
 struct mdss_overlay_private {
 	ktime_t vsync_time;

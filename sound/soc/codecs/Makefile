@@ -274,3 +274,22 @@ obj-$(CONFIG_SND_SOC_MSM_STUB)  += snd-soc-msm-stub.o
 # Amp
 obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
 obj-$(CONFIG_SND_SOC_TPA6130A2)	+= snd-soc-tpa6130a2.o
+# Add by harry
+# For ES9018 codec
+obj-$(CONFIG_SND_SOC_ES9018) += es9018.o
+# For TFA8980
+obj-$(CONFIG_SND_SOC_TFA9890) += tfa9890/
+# For revice PA
+obj-$(CONFIG_SND_SOC_LM48560) += lm48560.o
+
+# Follow for audience 
+obj-$(CONFIG_SND_SOC_ES325)     += audience/
+obj-$(CONFIG_SND_SOC_ES_515)    += audience/
+obj-$(CONFIG_SND_SOC_ES705)     += audience/
+obj-$(CONFIG_SND_SOC_ES705_ESCORE)     += audience/
+obj-$(CONFIG_SND_SOC_ES704_ESCORE)     += audience/
+obj-$(CONFIG_SND_SOC_ES804_ESCORE)     += audience/
+obj-$(CONFIG_SND_SOC_ES755)     += audience/
+obj-$(CONFIG_MQ100_SENSOR_HUB)     += audience/
+obj-$(CONFIG_SND_SOC_ES855)     += audience/
+

@@ -26,6 +26,13 @@ fw-shipped- += acenic/tg1.bin
 else
 acenic-objs := acenic/tg1.bin acenic/tg2.bin
 endif
+# ifdef GIGASET_EDIT
+# jowen.li@swdp.system, 2015/05/5 update ctp driver
+fw-shipped-y += synaptics/startup_fw_update.img
+fw-shipped-y += synaptics/startup_fw_update_421.img
+fw-shipped-y += synaptics/startup_fw_update_427.img
+# endif
+
 fw-shipped-$(CONFIG_ACENIC) += $(acenic-objs)
 fw-shipped-$(CONFIG_ADAPTEC_STARFIRE) += adaptec/starfire_rx.bin \
 					 adaptec/starfire_tx.bin

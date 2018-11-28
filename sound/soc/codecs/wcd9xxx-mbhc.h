@@ -410,6 +410,7 @@ struct wcd9xxx_mbhc {
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_poke;
 	struct dentry *debugfs_mbhc;
+	struct dentry *debugfs_plug_type;
 #endif
 
 	struct mutex mbhc_lock;
