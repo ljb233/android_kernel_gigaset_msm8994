@@ -2884,6 +2884,10 @@ int cnss_auto_suspend(void)
 	if (penv->pcie_link_state) {
 		pci_save_state(pdev);
 		penv->saved_state = pci_store_saved_state(pdev);
+		pci_disable_device(pdev);
+		ret = pci_set_power_state(pdev, PCI_D3hot);
+		if (ret)
+			pr_err("%s: Set D3Hot failed: %d\n", __func__, ret);
 		if (msm_pcie_pm_control(MSM_PCIE_SUSPEND,
 			cnss_get_pci_dev_bus_number(pdev),
 			pdev, NULL, PM_OPTIONS)) {
@@ -2919,6 +2923,9 @@ int cnss_auto_resume(void)
 			ret = -EAGAIN;
 			goto out;
 		}
+		ret = pci_enable_device(pdev);
+		if (ret)
+			pr_err("%s: enable device failed: %d\n", __func__, ret);
 		penv->pcie_link_state = PCIE_LINK_UP;
 	}
 
@@ -2927,6 +2934,7 @@ int cnss_auto_resume(void)
 			&penv->saved_state);
 
 	pci_restore_state(pdev);
+	pci_set_master(pdev);
 
 	atomic_set(&penv->auto_suspended, 0);
 out:
@@ -2977,12 +2985,14 @@ void cnss_runtime_init(struct device *dev, int auto_delay)
 	pm_runtime_allow(dev);
 	pm_runtime_mark_last_busy(dev);
 	pm_runtime_put_noidle(dev);
+	pm_suspend_ignore_children(dev, true);
 }
 EXPORT_SYMBOL(cnss_runtime_init);
 
 void cnss_runtime_exit(struct device *dev)
 {
 	pm_runtime_get_noresume(dev);
+	pm_runtime_set_active(dev);
 }
 EXPORT_SYMBOL(cnss_runtime_exit);
 module_init(cnss_initialize);

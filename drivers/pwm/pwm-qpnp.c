@@ -1814,16 +1814,13 @@ static int qpnp_parse_pwm_dt_config(struct device_node *of_pwm_node,
 
 #ifdef GIGASET_EDIT
 //jowen.li@swdp.system, 2015/02/16 added for oem panel bl ctrl
-	if(first_flag==0)
-	{
-	  first_flag=1;
+	if(first_flag==0) {
+	  	first_flag=1;
 	}
 	else
-	rc = _pwm_config(chip, LVL_USEC, chip->pwm_config.pwm_duty, period);
+		rc = _pwm_config(chip, LVL_USEC, chip->pwm_config.pwm_duty, period);
 #else
-
 	rc = _pwm_config(chip, LVL_USEC, chip->pwm_config.pwm_duty, period);
-
 #endif //GIGASET_EDIT
 
 	return rc;

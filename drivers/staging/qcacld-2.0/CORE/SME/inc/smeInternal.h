@@ -168,9 +168,6 @@ typedef struct tagSmeStruct
     /* linkspeed callback */
     void (*pLinkSpeedIndCb) (tSirLinkSpeedInfo *indParam, void *pDevContext);
     void *pLinkSpeedCbContext;
-    /* get rssi callback */
-    void (*pget_rssi_ind_cb) (struct sir_rssi_resp *param, void *pcontext);
-    void *pget_rssi_cb_context;
 #ifdef FEATURE_WLAN_EXTSCAN
     void (*pExtScanIndCb) (void *, const tANI_U16, void *);
 #endif /* FEATURE_WLAN_EXTSCAN */
@@ -180,6 +177,12 @@ typedef struct tagSmeStruct
     v_BOOL_t enableSelfRecovery;
     tCsrLinkStatusCallback linkStatusCallback;
     void *linkStatusContext;
+#ifdef WLAN_FEATURE_MEMDUMP
+    void (*fw_dump_callback)(void *context, struct fw_dump_rsp *rsp);
+#endif
+    void (*rssi_threshold_breached_cb)(void *, struct rssi_breach_event *);
+    void (*lost_link_info_cb)(void *context,
+			      struct sir_lost_link_info *lost_link_info);
 } tSmeStruct, *tpSmeStruct;
 
 

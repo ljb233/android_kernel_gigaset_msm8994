@@ -370,7 +370,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 		if (DSI_CORE_PM == i)
 			continue;
 		
-		#ifdef GIGASET_EDIT
+#ifdef GIGASET_EDIT
 		//jowen.li@swdp.system, 2015/07/27 add vdd gpio for 724 DVT
 		if((device_version>=DEVICE_VERSION_17427_DVT)&&(device_version<=DEVICE_VERSION_17427_MP))	
 		{
@@ -380,7 +380,7 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 			else if(DSI_PANEL_PM == i && panel_vdd_on==false)
 				panel_vdd_on=true;
 		}	
-		#endif
+#endif
 
 		ret = msm_dss_enable_vreg(
 			ctrl_pdata->power_data[i].vreg_config,
@@ -1624,14 +1624,15 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		ctrl_pdata->refresh_clk_rate = true;
 		break;
 	case MDSS_EVENT_LINK_READY:
+		if (ctrl_pdata->refresh_clk_rate)
+			rc = mdss_dsi_clk_refresh(pdata);
+
 		rc = mdss_dsi_on(pdata);
 		mdss_dsi_op_mode_config(pdata->panel_info.mipi.mode,
 							pdata);
 		break;
 	case MDSS_EVENT_UNBLANK:
 		mdss_dsi_get_hw_revision(ctrl_pdata);
-		if (ctrl_pdata->refresh_clk_rate)
-			rc = mdss_dsi_clk_refresh(pdata);
 
 		if (ctrl_pdata->on_cmds.link_state == DSI_LP_MODE)
 			rc = mdss_dsi_unblank(pdata);
@@ -1719,6 +1720,33 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 	}
 	pr_debug("%s-:event=%d, rc=%d\n", __func__, event, rc);
 	return rc;
+}
+
+static int mdss_dsi_set_override_cfg(char *override_cfg,
+		struct mdss_dsi_ctrl_pdata *ctrl_pdata, char *panel_cfg)
+{
+	struct mdss_panel_info *pinfo = &ctrl_pdata->panel_data.panel_info;
+	char *token = NULL;
+
+	pr_debug("%s: override config:%s\n", __func__, override_cfg);
+	while ((token = strsep(&override_cfg, ":"))) {
+		if (!strcmp(token, OVERRIDE_CFG)) {
+			continue;
+		} else if (!strcmp(token, SIM_HW_TE_PANEL)) {
+			pinfo->sim_panel_mode = SIM_HW_TE_MODE;
+		} else if (!strcmp(token, SIM_SW_TE_PANEL)) {
+			pinfo->sim_panel_mode = SIM_SW_TE_MODE;
+		} else if (!strcmp(token, SIM_PANEL)) {
+			pinfo->sim_panel_mode = SIM_MODE;
+		} else {
+			pr_err("%s: invalid override_cfg token: %s\n",
+					__func__, token);
+			return -EINVAL;
+		}
+	}
+	pr_debug("%s:sim_panel_mode:%d\n", __func__, pinfo->sim_panel_mode);
+
+	return 0;
 }
 
 #ifdef GIGASET_EDIT
@@ -1850,8 +1878,10 @@ static struct device_node *mdss_dsi_find_panel_of_node(
 	int ctrl_id = pdev->id - 1;
 	char panel_name[MDSS_MAX_PANEL_LEN];
 	char ctrl_id_stream[3] =  "0:";
-	char *stream = NULL, *pan = NULL;
+	char *stream = NULL, *pan = NULL, *override_cfg = NULL;
 	struct device_node *dsi_pan_node = NULL, *mdss_node = NULL;
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = platform_get_drvdata(pdev);
+	struct mdss_panel_info *pinfo = &ctrl_pdata->panel_data.panel_info;
 
 	len = strlen(panel_cfg);
 	if (!len) {
@@ -1860,6 +1890,17 @@ static struct device_node *mdss_dsi_find_panel_of_node(
 			 __func__, __LINE__);
 		goto end;
 	} else {
+		/* check if any override parameters are set */
+		pinfo->sim_panel_mode = 0;
+		override_cfg = strnstr(panel_cfg, "#" OVERRIDE_CFG, len);
+		if (override_cfg) {
+			*override_cfg = '\0';
+			if (mdss_dsi_set_override_cfg(override_cfg + 1,
+					ctrl_pdata, panel_cfg))
+				return NULL;
+			len = strlen(panel_cfg);
+		}
+
 		if (ctrl_id == 1)
 			strlcpy(ctrl_id_stream, "1:", 3);
 

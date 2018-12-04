@@ -425,12 +425,7 @@ static int msm_eeprom_parse_memory_map(struct device_node *of,
 		rc = of_property_read_u32_array(of, property,
 			(uint32_t *) &map[i].pageen, count);
 		if (rc < 0)
-#ifndef GIGASET_EDIT
-//carson.wan@gigasetdigital.com,2015/06/03,add for optimizing the eerpom probing process
-			pr_err("%s: pageen not needed\n", __func__);
-#else
 			CDBG("%s: pageen not needed\n", __func__);
-#endif
 
 		snprintf(property, PROPERTY_MAXSIZE, "qcom,saddr%d", i);
 		rc = of_property_read_u32_array(of, property,

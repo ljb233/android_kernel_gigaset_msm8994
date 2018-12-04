@@ -1940,6 +1940,8 @@ static void maybe_create_worker(struct worker_pool *pool)
 __releases(&pool->lock)
 __acquires(&pool->lock)
 {
+	if (!need_to_create_worker(pool))
+		return;
 restart:
 	spin_unlock_irq(&pool->lock);
 
@@ -1985,15 +1987,9 @@ restart:
  * LOCKING:
  * spin_lock_irq(pool->lock) which may be released and regrabbed
  * multiple times.  Called only from manager.
- *
- * RETURNS:
- * %false if no action was taken and pool->lock stayed locked, %true
- * otherwise.
  */
-static bool maybe_destroy_workers(struct worker_pool *pool)
+static void maybe_destroy_workers(struct worker_pool *pool)
 {
-	bool ret = false;
-
 	while (too_many_workers(pool)) {
 		struct worker *worker;
 		unsigned long expires;
@@ -2007,10 +2003,7 @@ static bool maybe_destroy_workers(struct worker_pool *pool)
 		}
 
 		destroy_worker(worker);
-		ret = true;
 	}
-
-	return ret;
 }
 
 /**
@@ -2868,34 +2861,29 @@ bool flush_work(struct work_struct *work)
 	}
 }
 EXPORT_SYMBOL_GPL(flush_work);
-#ifdef GIGASET_EDIT
-//jung.liu@swdp.system, 2015/09/02 added for kernel panic patch
+
 struct cwt_wait {
 	wait_queue_t		wait;
 	struct work_struct	*work;
 };
+
 static int cwt_wakefn(wait_queue_t *wait, unsigned mode, int sync, void *key)
 {
 	struct cwt_wait *cwait = container_of(wait, struct cwt_wait, wait);
+
 	if (cwait->work != key)
 		return 0;
 	return autoremove_wake_function(wait, mode, sync, key);
 }
-#endif//GIGASET_EDIT
+
 static bool __cancel_work_timer(struct work_struct *work, bool is_dwork)
 {
-#ifdef GIGASET_EDIT
-//jung.liu@swdp.system, 2015/09/02 added for kernel panic patch
 	static DECLARE_WAIT_QUEUE_HEAD(cancel_waitq);
-#endif//GIGASET_EDIT
 	unsigned long flags;
 	int ret;
 
 	do {
 		ret = try_to_grab_pending(work, is_dwork, &flags);
-		
-#ifdef GIGASET_EDIT
-//jung.liu@swdp.system, 2015/09/02 added for kernel panic patch
 		/*
 		 * If someone else is already canceling, wait for it to
 		 * finish.  flush_work() doesn't work for PREEMPT_NONE
@@ -2911,8 +2899,7 @@ static bool __cancel_work_timer(struct work_struct *work, bool is_dwork)
 		 * may lead to the thundering herd problem, use a custom
 		 * wake function which matches @work along with exclusive
 		 * wait and wakeup.
- 		 */
-
+		 */
 		if (unlikely(ret == -ENOENT)) {
 			struct cwt_wait cwait;
 
@@ -2926,14 +2913,6 @@ static bool __cancel_work_timer(struct work_struct *work, bool is_dwork)
 				schedule();
 			finish_wait(&cancel_waitq, &cwait.wait);
 		}
-#else
-		/*
-		 * If someone else is canceling, wait for the same event it
-		 * would be waiting for before retrying.
-		 */
-		if (unlikely(ret == -ENOENT))
-			flush_work(work);
-#endif//GIGASET_EDIT
 	} while (unlikely(ret < 0));
 
 	/* tell other tasks trying to grab @work to back off */
@@ -2942,9 +2921,6 @@ static bool __cancel_work_timer(struct work_struct *work, bool is_dwork)
 
 	flush_work(work);
 	clear_work_data(work);
-	
-#ifdef GIGASET_EDIT
-//jung.liu@swdp.system, 2015/09/02 added for kernel panic patch
 
 	/*
 	 * Paired with prepare_to_wait() above so that either
@@ -2954,7 +2930,6 @@ static bool __cancel_work_timer(struct work_struct *work, bool is_dwork)
 	smp_mb();
 	if (waitqueue_active(&cancel_waitq))
 		__wake_up(&cancel_waitq, TASK_NORMAL, 1, work);
-#endif//GIGASET_EDIT
 
 	return ret;
 }

@@ -18,6 +18,10 @@
  * GNU General Public License for more details.
  */
 
+#ifdef CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_PM9X
+#include "synaptics_dsx_pm9x.h"
+#else
+
 #ifndef _SYNAPTICS_DSX_H_
 #define _SYNAPTICS_DSX_H_
 
@@ -164,5 +168,5 @@ struct synaptics_rmi4_platform_data {
 };
 
 #endif
-
+#endif
 #endif

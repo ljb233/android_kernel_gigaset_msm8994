@@ -19,6 +19,7 @@
 #include <linux/qpnp/clkdiv.h>
 #include <linux/regulator/consumer.h>
 #include <linux/io.h>
+#include <linux/input.h>
 #include <linux/module.h>
 #include <linux/switch.h>
 #include <sound/core.h>
@@ -261,6 +262,14 @@ static struct wcd9xxx_mbhc_config mbhc_cfg = {
 	.enable_anc_mic_detect = false,
 	.hw_jack_type = SIX_POLE_JACK,
 #endif
+	.key_code[0] = KEY_MEDIA,
+	.key_code[1] = KEY_VOICECOMMAND,
+	.key_code[2] = KEY_VOLUMEUP,
+	.key_code[3] = KEY_VOLUMEDOWN,
+	.key_code[4] = 0,
+	.key_code[5] = 0,
+	.key_code[6] = 0,
+	.key_code[7] = 0,
 };
 
 #ifndef GIGASET_EDIT
@@ -285,6 +294,25 @@ static struct afe_clk_cfg pri_mi2s_clk = {
 	Q6AFE_LPASS_MODE_CLK1_VALID,
 	0,
 };
+#endif
+
+static atomic_t tert_mi2s_rsc_ref, quat_mi2s_rsc_ref;
+#ifdef GIGASET_EDIT
+static atomic_t pri_mi2s_rsc_ref;
+static int pri_mi2s_sample_rate = SAMPLING_RATE_48KHZ;
+static int pri_mi2s_bit_format = SNDRV_PCM_FORMAT_S16_LE;
+static int tert_mi2s_mast = 0;
+#endif
+/* frank, 2015/05/04, using to switch control */
+#ifdef GIGASET_EDIT
+struct switch_control {
+		int swi_pwr;
+		int swi_mute;
+		int swi_sel;
+		int gpio94; /* use to control MOSFET for OMTP headset detect */
+		int gpio94_data;
+};
+extern struct switch_control share2mbhc;
 #endif
 
 static struct afe_clk_cfg tert_mi2s_clk = {
@@ -314,27 +342,13 @@ static atomic_t tert_mi2s_rsc_ref, quat_mi2s_rsc_ref;
 static int tert_mi2s_sample_rate = SAMPLING_RATE_48KHZ;
 static int quat_mi2s_sample_rate = SAMPLING_RATE_48KHZ;
 #ifdef GIGASET_EDIT
-static atomic_t pri_mi2s_rsc_ref;
-static int pri_mi2s_sample_rate = SAMPLING_RATE_48KHZ;
-static int pri_mi2s_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int tert_mi2s_bit_format = SNDRV_PCM_FORMAT_S24_LE; // SNDRV_PCM_FORMAT_S16_LE;
 static int quat_mi2s_bit_format = SNDRV_PCM_FORMAT_S16_LE;
-static int tert_mi2s_mast = 0;
 #else
 static int tert_mi2s_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int quat_mi2s_bit_format = SNDRV_PCM_FORMAT_S24_LE;
 #endif
-/* frank, 2015/05/04, using to switch control */
-#ifdef GIGASET_EDIT
-struct switch_control {
-		int swi_pwr;
-		int swi_mute;
-		int swi_sel;
-		int gpio94; /* use to control MOSFET for OMTP headset detect */
-		int gpio94_data;
-};
-extern struct switch_control share2mbhc;
-#endif
+
 
 static inline int param_is_mask(int p)
 {
@@ -1358,8 +1372,8 @@ static int tert_mi2s_sample_rate_put(struct snd_kcontrol *kcontrol,
 		tert_mi2s_sample_rate = SAMPLING_RATE_192KHZ;
 		break;
 	case 1:
-		tert_mi2s_sample_rate = SAMPLING_RATE_96KHZ;
-		break;
+		//tert_mi2s_sample_rate = SAMPLING_RATE_96KHZ;
+		//break;
 #ifdef GIGASET_EDIT
 	case 3 :
 		tert_mi2s_sample_rate = SAMPLING_RATE_16KHZ;
@@ -2062,7 +2076,7 @@ static int msm8994_tert_mi2s_snd_startup(struct snd_pcm_substream *substream)
 		ret = msm_set_pinctrl(pinctrl_info, STATE_TERT_MI2S_ACTIVE);
 		if (ret) {
 			pr_err("%s: MI2S TLMM pinctrl set failed with %d\n", __func__, ret);
-			return ret;
+		return ret;
 		}
 		if(tert_mi2s_bit_format==SNDRV_PCM_FORMAT_S24_LE) {
 			switch(tert_mi2s_sample_rate) {
@@ -2520,7 +2534,7 @@ static int msm8994_mi2s_clk_put_value(struct snd_kcontrol *kcontrol, struct snd_
 	else
 		pr_err("%s: MI2S muxsel addr is NULL\n", __func__);
 
-	ret = msm_set_pinctrl(pinctrl_info, STATE_MI2S_ACTIVE);
+	ret = msm_set_pinctrl(pinctrl_info, STATE_PRI_MI2S_ACTIVE);
 	if (ret) {
 		pr_err("%s: MI2S TLMM pinctrl set failed with %d\n",
 			__func__, ret);
@@ -2557,7 +2571,7 @@ err:
 	if (ret < 0)
 		pr_err("%s: afe lpass clock failed, err:%d\n", __func__, ret);
 
-	ret = msm_reset_pinctrl(pinctrl_info, STATE_MI2S_ACTIVE);
+	ret = msm_reset_pinctrl(pinctrl_info, STATE_PRI_MI2S_ACTIVE);
 	if (ret)
 		pr_err("%s: Reset pinctrl failed with %d\n",
 			__func__, ret);
@@ -2576,7 +2590,6 @@ static struct snd_soc_ops msm8994_tert_mi2s_be_ops = {
 	.startup = msm8994_tert_mi2s_snd_startup,
 	.shutdown = msm8994_tert_mi2s_snd_shutdown,
 };
-
 static struct snd_soc_ops msm8994_quat_mi2s_be_ops = {
 	.startup = msm8994_quat_mi2s_snd_startup,
 	.shutdown = msm8994_quat_mi2s_snd_shutdown,
@@ -3167,18 +3180,18 @@ static void *def_codec_mbhc_cal(void)
 	btn_high[2] = 630;
 #else
 	btn_low[0] = -50;
-	btn_high[0] = 20;
-	btn_low[1] = 21;
-	btn_high[1] = 61;
-	btn_low[2] = 62;
+	btn_high[0] = 80;
+	btn_low[1] = 81;
+	btn_high[1] = 82;
+	btn_low[2] = 83;
 	btn_high[2] = 104;
 	btn_low[3] = 105;
 	btn_high[3] = 148;
 	btn_low[4] = 149;
 	btn_high[4] = 189;
 	btn_low[5] = 190;
-	btn_high[5] = 228;
-	btn_low[6] = 229;
+	btn_high[5] = 245;
+	btn_low[6] = 246;
 	btn_high[6] = 269;
 	btn_low[7] = 270;
 	btn_high[7] = 500;
@@ -3999,6 +4012,20 @@ static struct snd_soc_dai_link msm8994_common_dai_links[] = {
 		.codec_dai_name = "tomtom_mad1",
 		.codec_name = "tomtom_codec",
 	},
+	{
+		.name = "MultiMedia3 Record",
+		.stream_name = "MultiMedia3 Capture",
+		.cpu_dai_name = "MultiMedia3",
+		.platform_name = "msm-pcm-dsp.0",
+		.dynamic = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA3,
+	},
 #ifndef GIGASET_EDIT
 	{
 		.name = "Quaternary MI2S Hostless",
@@ -4631,7 +4658,7 @@ static int msm8994_asoc_machine_probe(struct platform_device *pdev)
 
 	mbhc_cfg.mclk_rate = pdata->mclk_freq;
 	if (of_property_read_bool(pdev->dev.of_node, "qcom,hdmi-audio-rx")) {
-		dev_info(&pdev->dev, "%s: hdmi audio support present\n",
+		dev_dbg(&pdev->dev, "%s: hdmi audio support present\n",
 				__func__);
 		memcpy(msm8994_dai_links, msm8994_common_dai_links,
 			sizeof(msm8994_common_dai_links));
@@ -4641,7 +4668,7 @@ static int msm8994_asoc_machine_probe(struct platform_device *pdev)
 		card->dai_link	= msm8994_dai_links;
 		card->num_links	= ARRAY_SIZE(msm8994_dai_links);
 	} else {
-		dev_info(&pdev->dev, "%s: No hdmi audio support\n", __func__);
+		dev_dbg(&pdev->dev, "%s: No hdmi audio support\n", __func__);
 
 		card->dai_link	= msm8994_common_dai_links;
 		card->num_links	= ARRAY_SIZE(msm8994_common_dai_links);

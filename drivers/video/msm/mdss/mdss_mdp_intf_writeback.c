@@ -560,12 +560,7 @@ static int mdss_mdp_wb_wait4comp(struct mdss_mdp_ctl *ctl, void *arg)
 	struct mdss_mdp_writeback_ctx *ctx;
 	int rc = 0;
 	u64 rot_time;
-
-//#if 1 //add by lwj for debug lcm dump ,patch from zhang nan 0726
-#ifdef GIGASET_EDIT
-//jowen.li@swdp.system, 2015/07/26 debug lcm dump ,patch from zhang nan 0726 
 	u32 status, mask, isr;
-#endif
 
 	ctx = (struct mdss_mdp_writeback_ctx *) ctl->priv_data;
 	if (!ctx) {
@@ -582,51 +577,36 @@ static int mdss_mdp_wb_wait4comp(struct mdss_mdp_ctl *ctl, void *arg)
 		NULL, NULL);
 
 	if (rc == 0) {
-#ifndef GIGASET_EDIT
-//jowen.li@swdp.system, 2015/07/26 debug lcm dump ,patch from zhang nan 0726 
-		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_TIMEOUT);
-		rc = -ENODEV;
-		WARN(1, "writeback kickoff timed out (%d) ctl=%d\n",
-						rc, ctl->num);
-	} else {
+		mask = BIT(ctx->intr_type + ctx->intf_num);
 
-#else //add by lwj for debug lcm dump ,patch from zhang nan 0726 
-
-		mask = BIT(MDSS_MDP_IRQ_WB_ROT_COMP + ctx->intf_num);
-		isr = readl_relaxed(ctl->mdata->mdp_base + MDSS_MDP_REG_INTR_STATUS);
+		isr = readl_relaxed(ctl->mdata->mdp_base +
+					MDSS_MDP_REG_INTR_STATUS);
 		status = mask & isr;
 
-		pr_info("mask: 0x%x, isr: 0x%x, status: 0x%x\n", mask, isr, status);
+		pr_info_once("mask: 0x%x, isr: 0x%x, status: 0x%x\n",
+				mask, isr, status);
 
 		if (status) {
-			WARN(1, "wb done but irq not triggered\n");
+			pr_warn_once("wb done but irq not triggered\n");
 			mdss_mdp_irq_clear(ctl->mdata,
-					MDSS_MDP_IRQ_WB_ROT_COMP,
+					ctx->intr_type,
 					ctx->intf_num);
+
 			mdss_mdp_writeback_intr_done(ctl);
 			rc = 0;
-		}
-		else {
+		} else {
 			mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_TIMEOUT);
 			rc = -ENODEV;
 			WARN(1, "writeback kickoff timed out (%d) ctl=%d\n",
 							rc, ctl->num);
 		}
-	}
-	else {
+	} else {
 		rc = 0;
 	}
 
 	if (rc == 0) {
-
-#endif  //patch from zhang nan 0726
-
 		ctx->end_time = ktime_get();
 		mdss_mdp_ctl_notify(ctl, MDP_NOTIFY_FRAME_DONE);
-#ifndef GIGASET_EDIT
-//jowen.li@swdp.system, 2015/07/26 debug lcm dump ,patch from zhang nan 0726  
-		rc = 0;
-#endif 
 	}
 
 	/* once operation is done, disable traffic shaper */
