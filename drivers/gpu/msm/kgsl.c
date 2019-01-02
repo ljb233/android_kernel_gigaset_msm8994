@@ -2793,20 +2793,6 @@ static int kgsl_setup_phys_file(struct kgsl_mem_entry *entry,
 }
 #endif
 
-static int check_vma_flags(struct vm_area_struct *vma,
-		unsigned int flags)
-{
-	unsigned long flags_requested = (VM_READ | VM_WRITE);
-
-	if (flags & KGSL_MEMFLAGS_GPUREADONLY)
-		flags_requested &= ~VM_WRITE;
-
-	if ((vma->vm_flags & flags_requested) == flags_requested)
-		return 0;
-
-	return -EFAULT;
-}
-
 static int check_vma(struct vm_area_struct *vma, struct file *vmfile,
 		struct kgsl_memdesc *memdesc)
 {
@@ -2820,7 +2806,7 @@ static int check_vma(struct vm_area_struct *vma, struct file *vmfile,
 	if (vma->vm_start != memdesc->useraddr ||
 		(memdesc->useraddr + memdesc->size) != vma->vm_end)
 		return -EINVAL;
-	return check_vma_flags(vma, memdesc->flags);
+	return 0;
 }
 
 static int memdesc_sg_virt(struct kgsl_memdesc *memdesc, struct file *vmfile)
@@ -2829,7 +2815,7 @@ static int memdesc_sg_virt(struct kgsl_memdesc *memdesc, struct file *vmfile)
 	long npages = 0, i;
 	unsigned long sglen = memdesc->size / PAGE_SIZE;
 	struct page **pages = NULL;
-	int write = ((memdesc->flags & KGSL_MEMFLAGS_GPUREADONLY) ? 0 : 1);
+	int write = (memdesc->flags & KGSL_MEMFLAGS_GPUREADONLY) != 0;
 
 	if (sglen == 0 || sglen >= LONG_MAX)
 		return -EINVAL;
@@ -2915,7 +2901,6 @@ static int kgsl_setup_useraddr(struct kgsl_mem_entry *entry,
 	struct kgsl_map_user_mem *param = data;
 	struct dma_buf *dmabuf = NULL;
 	struct vm_area_struct *vma = NULL;
-	int ret;
 
 	if (param->len == 0 || param->offset != 0
 		|| param->hostptr == 0
@@ -2932,12 +2917,6 @@ static int kgsl_setup_useraddr(struct kgsl_mem_entry *entry,
 
 	if (vma && vma->vm_file) {
 		int fd;
-
-		ret = check_vma_flags(vma, entry->memdesc.flags);
-		if (ret) {
-			up_read(&current->mm->mmap_sem);
-			return ret;
-		}
 
 		/*
 		 * Check to see that this isn't our own memory that we have
@@ -2956,11 +2935,11 @@ static int kgsl_setup_useraddr(struct kgsl_mem_entry *entry,
 	}
 
 	if (!IS_ERR_OR_NULL(dmabuf)) {
-		ret = kgsl_setup_dma_buf(entry, pagetable, device, dmabuf);
+		int ret = kgsl_setup_dma_buf(entry, pagetable, device, dmabuf);
 		if (ret) {
 			dma_buf_put(dmabuf);
 			up_read(&current->mm->mmap_sem);
-		}else {
+		} else {
 			/* Match the cache settings of the vma region */
 			_setup_cache_mode(entry, vma);
 			up_read(&current->mm->mmap_sem);
@@ -4777,8 +4756,8 @@ int kgsl_device_platform_probe(struct kgsl_device *device)
 				PM_QOS_CPU_DMA_LATENCY,
 				PM_QOS_DEFAULT_VALUE);
 
-
-	device->events_wq = create_workqueue("kgsl-events");
+	device->events_wq = alloc_workqueue("kgsl-events",
+		WQ_UNBOUND | WQ_MEM_RECLAIM, 0);
 
 	/* Initalize the snapshot engine */
 	kgsl_device_snapshot_init(device);
@@ -4864,6 +4843,8 @@ static void kgsl_core_exit(void)
 static int __init kgsl_core_init(void)
 {
 	int result = 0;
+	struct sched_param param = { .sched_priority = 2 };
+
 	/* alloc major and minor device numbers */
 	result = alloc_chrdev_region(&kgsl_driver.major, 0, KGSL_DEVICE_MAX,
 		"kgsl");
@@ -4925,6 +4906,18 @@ static int __init kgsl_core_init(void)
 
 	kgsl_mmu_set_mmutype(ksgl_mmu_type);
 
+	init_kthread_worker(&kgsl_driver.worker);
+
+	kgsl_driver.worker_thread = kthread_run(kthread_worker_fn,
+		&kgsl_driver.worker, "kgsl_worker_thread");
+
+	if (IS_ERR(kgsl_driver.worker_thread)) {
+		pr_err("unable to start kgsl thread\n");
+		goto err;
+	}
+
+	sched_setscheduler(kgsl_driver.worker_thread, SCHED_FIFO, &param);
+
 	kgsl_events_init();
 
 	/* create the memobjs kmem cache */
@@ -4936,8 +4929,6 @@ static int __init kgsl_core_init(void)
 	}
 
 	kgsl_memfree_init();
-
-	kgsl_heap_init();
 
 	return 0;
 
