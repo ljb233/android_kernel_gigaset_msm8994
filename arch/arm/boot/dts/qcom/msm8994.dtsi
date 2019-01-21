@@ -476,12 +476,12 @@
 		//#ifdef GIGASET_EDIT
 		//#jung.liu added for kernel debug
 		pstore_reserve_mem: pstore_reserve_mem_region@0 {
-            		linux,reserve-contiguous-region;
+            linux,reserve-contiguous-region;
 			linux,reserve-region;
 			linux,remove-completely;
-		        reg = <0x0 0x9ff00000 0x0 0x00100000>;
-		        label = "pstore_reserve_mem";
-	        };
+		    reg = <0x0 0x9ff00000 0x0 0x00100000>;
+		    label = "pstore_reserve_mem";
+	    };
 		//endif
 
 	};
@@ -651,10 +651,13 @@
 	//#jung.liu added for kernel debug
 	ramoops {
 		compatible = "ramoops";
-		/*
-		reg = <0x9ff00000 0x00100000>;
-		*/
-		record-size = <0x00020000>;
+		android,ramoops-buffer-start = <0x9ff00000>;
+		android,ramoops-buffer-size  = <0x00100000>;
+		android,ramoops-console-size = <0x00080000>;
+		android,ramoops-pmsg-size    = <0x00040000>;
+		android,ramoops-record-size  = <0x00008000>;
+		android,ramoops-ftrace-size  = <0x00020000>;
+		android,ramoops-dump-oops    = <0x1>;
 		linux,contiguous-region = <&pstore_reserve_mem>;
 	};
 	//endif
@@ -2497,7 +2500,7 @@
 		qcom,msm-bus-clients {
 			qcom,msm-bus-client@0 {
 				qcom,msm-bus,name = "venc-core1-ddr";
-				qcom,msm-bus,num-cases = <11>;
+				qcom,msm-bus,num-cases = <10>;
 				qcom,msm-bus,num-paths = <1>;
 				qcom,msm-bus,vectors-KBps =
 					<63 512 0 0>,
@@ -2506,7 +2509,6 @@
 					<63 512 201100 0>,
 					<63 512 458300 0>,
 					<63 512 458300 0>,
-					<63 512 889200 0>,
 					<63 512 889200 0>,
 					<63 512 2108700 0>,
 					<63 512 2243700 0>,
@@ -2516,7 +2518,7 @@
 
 			qcom,msm-bus-client@1 {
 				qcom,msm-bus,name = "vdec-core0-ddr";
-				qcom,msm-bus,num-cases = <11>;
+				qcom,msm-bus,num-cases = <10>;
 				qcom,msm-bus,num-paths = <1>;
 				qcom,msm-bus,vectors-KBps =
 					<63 512 0 0>,
@@ -2526,7 +2528,6 @@
 					<63 512 749100 0>,
 					<63 512 749100 0>,
 					<63 512 1460700 0>,
-					<63 512 1460700 0>,
 					<63 512 2390500 0>,
 					<63 512 2542300 0>,
 					<63 512 2959800 0>;
@@ -2535,7 +2536,7 @@
 
 			qcom,msm-bus-client@2 {
 				qcom,msm-bus,name = "vdec-core1-ddr";
-				qcom,msm-bus,num-cases = <11>;
+				qcom,msm-bus,num-cases = <10>;
 				qcom,msm-bus,num-paths = <1>;
 				qcom,msm-bus,vectors-KBps =
 					<63 512 0 0>,
@@ -2545,7 +2546,6 @@
 					<63 512 571400 0>,
 					<63 512 571400 0>,
 					<63 512 1088500 0>,
-					<63 512 1088500 0>,
 					<63 512 1811000 0>,
 					<63 512 1962000 0>,
 					<63 512 2242900 0>;
@@ -2554,7 +2554,7 @@
 
 			qcom,msm-bus-client@3 {
 				qcom,msm-bus,name = "venc-core2-ddr";
-				qcom,msm-bus,num-cases = <11>;
+				qcom,msm-bus,num-cases = <10>;
 				qcom,msm-bus,num-paths = <1>;
 				qcom,msm-bus,vectors-KBps =
 					<63 512 0 0>,
@@ -2564,7 +2564,6 @@
 					<63 512 759000 0>,
 					<63 512 759000 0>,
 					<63 512 1050000 0>,
-					<63 512 1050000 0>,
 					<63 512 3077000 0>,
 					<63 512 3811000 0>,
 					<63 512 3812000 0>;
@@ -2572,7 +2571,7 @@
 			};
 			qcom,msm-bus-client@4 {
 				qcom,msm-bus,name = "venc-core1-ocmem";
-				qcom,msm-bus,num-cases = <11>;
+				qcom,msm-bus,num-cases = <10>;
 				qcom,msm-bus,num-paths = <1>;
 				qcom,msm-bus,vectors-KBps =
 					<68 604 0 0>,
@@ -2582,7 +2581,6 @@
 					<68 604 470000 2384000>,
 					<68 604 470000 2384000>,
 					<68 604 940000 3632000>,
-					<68 604 940000 3632000>,
 					<68 604 1787000 3632000>,
 					<68 604 1906000 3632000>,
 					<68 604 2234000 3632000>;
@@ -2590,7 +2588,7 @@
 			};
 			qcom,msm-bus-client@5 {
 				qcom,msm-bus,name = "venc-core2-ocmem";
-				qcom,msm-bus,num-cases = <11>;
+				qcom,msm-bus,num-cases = <10>;
 				qcom,msm-bus,num-paths = <1>;
 				qcom,msm-bus,vectors-KBps =
 					<68 604 0 0>,
@@ -2600,7 +2598,6 @@
 					<68 604 564000 2384000>,
 					<68 604 564000 2384000>,
 					<68 604 1003000 3632000>,
-					<68 604 1003000 3632000>,
 					<68 604 2040000 3632000>,
 					<68 604 2349000 3632000>,
 					<68 604 2551000 3632000>;
@@ -2609,7 +2606,7 @@
 
 			qcom,msm-bus-client@6 {
 				qcom,msm-bus,name = "vdec-core0-ocmem";
-				qcom,msm-bus,num-cases = <11>;
+				qcom,msm-bus,num-cases = <10>;
 				qcom,msm-bus,num-paths = <1>;
 				qcom,msm-bus,vectors-KBps =
 					<68 604 0 0>,
@@ -2619,7 +2616,6 @@
 					<68 604 367000 2384000>,
 					<68 604 367000 2384000>,
 					<68 604 735000 3632000>,
-					<68 604 735000 3632000>,
 					<68 604 1175000 3632000>,
 					<68 604 1254000 3632000>,
 					<68 604 1469000 3632000>;
@@ -2628,7 +2624,7 @@
 
 			qcom,msm-bus-client@7 {
 				qcom,msm-bus,name = "vdec-core1-ocmem";
-				qcom,msm-bus,num-cases = <11>;
+				qcom,msm-bus,num-cases = <10>;
 				qcom,msm-bus,num-paths = <1>;
 				qcom,msm-bus,vectors-KBps =
 					<68 604 0 0>,
@@ -2638,7 +2634,6 @@
 					<68 604 432000 2384000>,
 					<68 604 432000 2384000>,
 					<68 604 865000 3632000>,
-					<68 604 865000 3632000>,
 					<68 604 1374000 3632000>,
 					<68 604 1465000 3632000>,
 					<68 604 1717000 3632000>;
@@ -2647,7 +2642,7 @@
 
 			qcom,msm-bus-client@8 {
 				qcom,msm-bus,name = "venc-ddr-lp";
-				qcom,msm-bus,num-cases = <11>;
+				qcom,msm-bus,num-cases = <10>;
 				qcom,msm-bus,num-paths = <1>;
 				qcom,msm-bus,vectors-KBps =
 					<63 512 0 0>,
@@ -2656,7 +2651,6 @@
 					<63 512 201100 0>,
 					<63 512 458300 0>,
 					<63 512 458300 0>,
-					<63 512 889200 0>,
 					<63 512 889200 0>,
 					<63 512 1218000 0>,
 					<63 512 1218000 0>,
@@ -2872,8 +2866,8 @@
 				"msm-compress-dsp", "msm-pcm-hostless", "msm-pcm-afe",
 				"msm-lsm-client", "msm-pcm-routing", "msm-cpe-lsm",
 				"msm-compr-dsp";
-		asoc-cpu = <&dai_pri_auxpcm>, <&dai_sec_auxpcm>, <&dai_hdmi>, <&dai_pri_mi2s>,
-				<&dai_sec_mi2s>,<&dai_tert_mi2s>,<&dai_quat_mi2s>,
+		asoc-cpu = <&dai_pri_auxpcm>, <&dai_sec_auxpcm>, <&dai_hdmi>, <&dai_mi2s0>,
+				<&dai_mi2s1>,<&dai_mi2s2>,<&dai_mi2s3>,
 				<&sb_0_rx>, <&sb_0_tx>, <&sb_1_rx>, <&sb_1_tx>,
 				<&sb_2_rx>, <&sb_2_tx>, <&sb_3_rx>, <&sb_3_tx>,
 				<&sb_4_rx>, <&sb_4_tx>, <&sb_5_tx>, <&bt_sco_rx>,
@@ -3132,25 +3126,25 @@
 
 	qcom,msm-dai-mi2s {
 		compatible = "qcom,msm-dai-mi2s";
-		dai_pri_mi2s: qcom,msm-dai-q6-mi2s-prim {
+		dai_mi2s0: qcom,msm-dai-q6-mi2s-prim {
 			compatible = "qcom,msm-dai-q6-mi2s";
 			qcom,msm-dai-q6-mi2s-dev-id = <0>;
 			qcom,msm-mi2s-rx-lines = <1>;
 			qcom,msm-mi2s-tx-lines = <2>;
 		};
-		dai_sec_mi2s: qcom,msm-dai-q6-mi2s-sec {
+		dai_mi2s1: qcom,msm-dai-q6-mi2s-sec {
 			compatible = "qcom,msm-dai-q6-mi2s";
 			qcom,msm-dai-q6-mi2s-dev-id = <1>;
 			qcom,msm-mi2s-rx-lines = <1>;
 			qcom,msm-mi2s-tx-lines = <2>;
 		};
-		dai_tert_mi2s: qcom,msm-dai-q6-mi2s-tert {
+        	dai_mi2s2: qcom,msm-dai-q6-mi2s-tert {
 			compatible = "qcom,msm-dai-q6-mi2s";
 			qcom,msm-dai-q6-mi2s-dev-id = <2>;
 			qcom,msm-mi2s-rx-lines = <1>;
 			qcom,msm-mi2s-tx-lines = <2>;
 		};
-		dai_quat_mi2s: qcom,msm-dai-q6-mi2s-quat {
+        	dai_mi2s3: qcom,msm-dai-q6-mi2s-quat {
 			compatible = "qcom,msm-dai-q6-mi2s";
 			qcom,msm-dai-q6-mi2s-dev-id = <3>;
 			qcom,msm-mi2s-rx-lines = <1>;
