@@ -67,8 +67,10 @@
 #define TOMTOM_EXT_CLK_RATE         9600000
 #define ADSP_STATE_READY_TIMEOUT_MS    3000
 
-#define MSM_TERT_MI2S_MASTER
+// #define MSM_TERT_MI2S_MASTER
+#define MSM_PRI_MI2S_MASTER
 #define MSM_QUAT_MI2S_MASTER
+
 
 enum pinctrl_pin_state {
 	STATE_DISABLE = 0,   /* All pins are in sleep state */
@@ -1345,7 +1347,6 @@ static int tert_mi2s_sample_rate_get(struct snd_kcontrol *kcontrol,
 	case SAMPLING_RATE_192KHZ:
 		sample_rate_val = 2;
 		break;
-
 	case SAMPLING_RATE_96KHZ:
 		sample_rate_val = 1;
 		break;
@@ -2110,7 +2111,6 @@ static int msm8994_tert_mi2s_snd_startup(struct snd_pcm_substream *substream)
 			}
 		}
 
-#ifdef MSM_TERT_MI2S_MASTER
 #ifdef MSM_TERT_MI2S_MCLK
 		tert_mi2s_clk.clk_val2 = Q6AFE_LPASS_OSR_CLK_12_P288_MHZ;
 		tert_mi2s_clk.clk_set_mode = Q6AFE_LPASS_MODE_BOTH_VALID;
@@ -2127,7 +2127,7 @@ static int msm8994_tert_mi2s_snd_startup(struct snd_pcm_substream *substream)
 		ret = snd_soc_dai_set_fmt(cpu_dai, SND_SOC_DAIFMT_CBS_CFS);
 		if (ret < 0)
 			pr_err("%s: set fmt cpu dai failed, err:%d\n", __func__, ret);
-#else
+
 		iowrite32(I2S_SLAVE_SEL << I2S_MASTER_OFFSET,
 		pdata->ter_mux);
 
@@ -2142,7 +2142,6 @@ static int msm8994_tert_mi2s_snd_startup(struct snd_pcm_substream *substream)
 		ret = snd_soc_dai_set_fmt(cpu_dai, SND_SOC_DAIFMT_CBM_CFM);
 		if (ret < 0)
 			pr_err("%s: set fmt cpu dai failed, err:%d\n", __func__, ret);
-#endif
 	}
 
 err:
@@ -4649,11 +4648,13 @@ static int msm8994_asoc_machine_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+#ifndef GIGASET_EDIT
 	mbhc_cfg.gpio_level_insert = of_property_read_bool(
 					pdev->dev.of_node,
 					"qcom,headset-jack-type-NC");
 	dev_dbg(&pdev->dev, "gpio_level_insert (%d)\n",
 		mbhc_cfg.gpio_level_insert);
+#endif
 
 	ret = msm8994_prepare_codec_mclk(card);
 	if (ret) {
@@ -4663,8 +4664,12 @@ static int msm8994_asoc_machine_probe(struct platform_device *pdev)
 	}
 
 	mbhc_cfg.mclk_rate = pdata->mclk_freq;
+#ifdef GIGASET_EDIT
+	if (false) {
+#else
 	if (of_property_read_bool(pdev->dev.of_node, "qcom,hdmi-audio-rx")) {
-		dev_dbg(&pdev->dev, "%s: hdmi audio support present\n",
+#endif
+		dev_info(&pdev->dev, "%s: hdmi audio support present\n",
 				__func__);
 		memcpy(msm8994_dai_links, msm8994_common_dai_links,
 			sizeof(msm8994_common_dai_links));
@@ -4674,7 +4679,7 @@ static int msm8994_asoc_machine_probe(struct platform_device *pdev)
 		card->dai_link	= msm8994_dai_links;
 		card->num_links	= ARRAY_SIZE(msm8994_dai_links);
 	} else {
-		dev_dbg(&pdev->dev, "%s: No hdmi audio support\n", __func__);
+		dev_info(&pdev->dev, "%s: No hdmi audio support\n", __func__);
 
 		card->dai_link	= msm8994_common_dai_links;
 		card->num_links	= ARRAY_SIZE(msm8994_common_dai_links);
@@ -4747,7 +4752,7 @@ static int msm8994_asoc_machine_probe(struct platform_device *pdev)
 	if (ret)
 		dev_info(&pdev->dev, "msm8994_prepare_us_euro failed (%d)\n",
 			ret);
-
+	card_pri = card;
 #ifdef GIGASET_EDIT
 	/* frank, 2015/05/04, using for switch control */
 	ret = of_get_named_gpio(pdev->dev.of_node, "swi,pwr_gpio", 0);

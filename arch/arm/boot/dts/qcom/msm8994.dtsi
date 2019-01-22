@@ -2835,8 +2835,8 @@
 		/* Add tert pinctrl by Harry */
 		pinctrl-names = "sleep",
 				"auxpcm-active",
-				"mi2s-active",
-				"tert-i2s-active",
+				"pri_mi2s-active",
+				"tert_i2s-active",
 				"active";
 		pinctrl-0 = <&pri_mi2s_sleep>, <&pri_mi2s_sd0_sleep>,
 				<&sec_aux_pcm_sleep>, <&sec_aux_pcm_din_sleep>,
