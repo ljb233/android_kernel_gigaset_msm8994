@@ -103,7 +103,9 @@ struct msm_pinctrl_info {
 	struct pinctrl_state *pri_mi2s_active;
 	struct pinctrl_state *auxpcm_active;
 	struct pinctrl_state *tert_mi2s_active;
+#ifndef GIGASET_EDIT
 	struct pinctrl_state *quat_mi2s_active;
+#endif
 #ifdef CONFIG_MACH_PM9X
 	struct pinctrl_state *pri_quat_mi2s_active;
 #endif
@@ -1813,12 +1815,14 @@ static int msm_get_pinctrl(struct platform_device *pdev)
 		goto err;
 	}
 #endif
+#ifndef GIGASET_EDIT
 	pinctrl_info->quat_mi2s_active = pinctrl_lookup_state(pinctrl,
 						"quat_mi2s-active");
 	if (IS_ERR(pinctrl_info->quat_mi2s_active)) {
 		pr_err("%s: could not get quat_mi2s pinstate\n", __func__);
 		goto err;
 	}
+#endif
 #ifdef CONFIG_MACH_PM9X
 	pinctrl_info->pri_quat_mi2s_active = pinctrl_lookup_state(pinctrl,
 						"pri-quat_mi2s-active");
