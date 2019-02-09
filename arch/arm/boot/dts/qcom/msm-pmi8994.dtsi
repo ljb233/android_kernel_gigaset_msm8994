@@ -601,6 +601,8 @@
 			label = "rgb";
 			status = "okay";
 
+			qcom,rgb-sync;
+
 			qcom,rgb_0 {
 				label = "rgb";
 				qcom,id = <3>;
@@ -620,8 +622,7 @@
 				qcom,pause-hi = <0>;
 				qcom,use-blink;
 				/* #endif */
-				linux,default-trigger =
-					"battery-charging";
+				linux,default-trigger = "battery-charging";
 			};
 
 			qcom,rgb_1 {
