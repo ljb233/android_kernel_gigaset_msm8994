@@ -785,6 +785,8 @@ static int tfa98xx_init(struct tfa98xx *tfa98xx)
 static int tfa98xx_startup(struct tfa98xx *tfa98xx)
 {
 	int tries, status, ret;
+	struct snd_soc_codec *codec = tfa98xx->codec;
+	u16 statusreg = 0;
 
 	pr_debug("\n");
 
@@ -810,6 +812,31 @@ static int tfa98xx_startup(struct tfa98xx *tfa98xx)
 	/*  powered on
 	 *    - now it is allowed to access DSP specifics
 	 */
+	for (tries = 1; tries < AREFS_TRIES; tries++) {
+        statusreg = (u16)snd_soc_read(codec, TFA98XX_STATUSREG);
+		if(tries > 2)
+			pr_err("statusreg = 0x%04x, tries=%d\n", statusreg, tries);
+        if (statusreg & TFA98XX_STATUSREG_AREFS_MSK)
+            break;
+        else
+            msleep_interruptible(2);
+    }
+
+    if (tries == AREFS_TRIES) {
+		pr_err("Check AREFS time out\n");
+	}	
+
+    /* NXP: Added putting DSP to reset mode to start TFA in proper sequence */
+    /*
+    * Reset Coolflux
+    */
+    switch (tfa98xx->rev) {
+        case 0x80:
+            ret = tfa98xx_dsp_reset(tfa98xx, 1);
+            break;
+        default:
+            break;
+	} 
 
 	/*
 	 * wait until the DSP subsystem hardware is ready

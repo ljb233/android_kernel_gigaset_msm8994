@@ -170,6 +170,7 @@ static int msm_dts_srs_trumedia_control_mi2s_set(struct snd_kcontrol *kcontrol,
 	return ret;
 }
 
+#ifndef GIGASET_EDIT
 static int msm_dts_srs_trumedia_control_quat_mi2s_set(struct snd_kcontrol *kcontrol,
 					  struct snd_ctl_elem_value *ucontrol)
 {
@@ -182,6 +183,7 @@ static int msm_dts_srs_trumedia_control_quat_mi2s_set(struct snd_kcontrol *kcont
 	msm_pcm_routing_release_lock();
 	return ret;
 }
+#endif
 
 static int msm_dts_srs_trumedia_control_hdmi_set(struct snd_kcontrol *kcontrol,
 					   struct snd_ctl_elem_value *ucontrol)
@@ -278,6 +280,7 @@ static const struct snd_kcontrol_new lpa_srs_trumedia_controls_mi2s[] = {
 	}
 };
 
+#ifndef GIGASET_EDIT
 static const struct snd_kcontrol_new lpa_srs_trumedia_controls_quat_mi2s[] = {
 	{
 		.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
@@ -299,6 +302,7 @@ static const struct snd_kcontrol_new lpa_srs_trumedia_controls_quat_mi2s[] = {
 		})
 	}
 };
+#endif
 
 void msm_dts_srs_tm_add_controls(struct snd_soc_platform *platform)
 {
@@ -316,9 +320,11 @@ void msm_dts_srs_tm_add_controls(struct snd_soc_platform *platform)
 	snd_soc_add_platform_controls(platform,
 				lpa_srs_trumedia_controls_mi2s,
 			ARRAY_SIZE(lpa_srs_trumedia_controls_mi2s));
+#ifndef GIGASET_EDIT
 	snd_soc_add_platform_controls(platform,
 				lpa_srs_trumedia_controls_quat_mi2s,
 			ARRAY_SIZE(lpa_srs_trumedia_controls_quat_mi2s));
+#endif
 }
 
 static int reg_ion_mem(void)

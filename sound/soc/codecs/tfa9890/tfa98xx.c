@@ -477,8 +477,7 @@ int tfa98xx_set_profile_ctl(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
 	struct tfa98xx *tfa98xx = snd_soc_codec_get_drvdata(codec);
-	struct tfaprofile *profiles =
-				(struct tfaprofile *)kcontrol->private_value;
+	struct tfaprofile *profiles = (struct tfaprofile *)kcontrol->private_value;
 	struct tfaprofile *prof_old = &profiles[tfa98xx->profile_current];
 	struct tfaprofile *prof_new;
 
@@ -612,8 +611,7 @@ int tfa98xx_set_vol_ctl(struct snd_kcontrol *kcontrol,
 int tfa98xx_info_vol_ctl(struct snd_kcontrol *kcontrol,
 		       struct snd_ctl_elem_info *uinfo)
 {
-	struct tfaprofile *profiles =
-				(struct tfaprofile *)kcontrol->private_value;
+	struct tfaprofile *profiles = (struct tfaprofile *)kcontrol->private_value;
 	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
 	struct tfa98xx *tfa98xx = snd_soc_codec_get_drvdata(codec);
 	struct tfaprofile *prof = &profiles[tfa98xx->profile_ctl];

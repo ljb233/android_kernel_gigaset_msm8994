@@ -2541,6 +2541,144 @@ error_invalid_data:
 	return -EINVAL;
 }
 
+#ifdef GIGASET_EDIT
+static int msm_dai_q6_mi2s_set_clk(struct snd_soc_dai *dai, int pll_id, int source,
+	unsigned int freq_in, unsigned int freq_out)
+{
+	struct msm_dai_q6_mi2s_dai_data *mi2s_dai_data =
+		dev_get_drvdata(dai->dev);
+	struct msm_dai_q6_mi2s_dai_config *mi2s_dai_config = &mi2s_dai_data->rx_dai;
+	struct msm_dai_q6_dai_data *dai_data = &mi2s_dai_config->mi2s_dai_data;
+	struct afe_param_id_i2s_cfg *i2s = &dai_data->port_config.i2s;
+
+	u16 port_id = 0;
+	int rc = 0;
+
+        pr_err("%s: enter\n", __func__);
+	if(pll_id == 1){
+		dai_data->channels = 2;
+
+		if (mi2s_dai_config->pdata_mi2s_lines < AFE_PORT_I2S_SD0)
+			goto error_invalid_data;
+		switch (mi2s_dai_config->pdata_mi2s_lines) {
+		case AFE_PORT_I2S_SD0:
+		case AFE_PORT_I2S_SD1:
+		case AFE_PORT_I2S_SD2:
+		case AFE_PORT_I2S_SD3:
+			dai_data->port_config.i2s.channel_mode =
+				mi2s_dai_config->pdata_mi2s_lines;
+			break;
+		case AFE_PORT_I2S_QUAD01:
+		case AFE_PORT_I2S_6CHS:
+		case AFE_PORT_I2S_8CHS:
+			dai_data->port_config.i2s.channel_mode =
+						AFE_PORT_I2S_SD0;
+			break;
+		case AFE_PORT_I2S_QUAD23:
+			dai_data->port_config.i2s.channel_mode =
+						AFE_PORT_I2S_SD2;
+			break;
+		}
+		if (dai_data->channels == 2)
+			dai_data->port_config.i2s.mono_stereo =
+						MSM_AFE_CH_STEREO;
+		else
+			dai_data->port_config.i2s.mono_stereo = MSM_AFE_MONO;
+
+		dai_data->rate = 48000;
+
+		dai_data->port_config.i2s.bit_width = 16;
+		dai_data->bitwidth = 16;
+
+
+		dai_data->port_config.i2s.i2s_cfg_minor_version = AFE_API_VERSION_I2S_CONFIG;
+		dai_data->port_config.i2s.sample_rate = dai_data->rate;
+		if ((test_bit(STATUS_PORT_STARTED,
+		    mi2s_dai_data->rx_dai.mi2s_dai_data.status_mask) &&
+		    test_bit(STATUS_PORT_STARTED,
+		    mi2s_dai_data->rx_dai.mi2s_dai_data.hwfree_status)) ||
+		    (test_bit(STATUS_PORT_STARTED,
+		    mi2s_dai_data->tx_dai.mi2s_dai_data.status_mask) &&
+		    test_bit(STATUS_PORT_STARTED,
+		    mi2s_dai_data->tx_dai.mi2s_dai_data.hwfree_status))) {
+			if ((mi2s_dai_data->tx_dai.mi2s_dai_data.rate !=
+			    mi2s_dai_data->rx_dai.mi2s_dai_data.rate) ||
+			   (mi2s_dai_data->rx_dai.mi2s_dai_data.bitwidth !=
+				    mi2s_dai_data->tx_dai.mi2s_dai_data.bitwidth)) {
+				dev_err(dai->dev, "%s: Error mismatch in HW params\n"
+					"Tx sample_rate = %u bit_width = %hu\n"
+					"Rx sample_rate = %u bit_width = %hu\n"
+					, __func__,
+					mi2s_dai_data->tx_dai.mi2s_dai_data.rate,
+					mi2s_dai_data->tx_dai.mi2s_dai_data.bitwidth,
+					mi2s_dai_data->rx_dai.mi2s_dai_data.rate,
+					mi2s_dai_data->rx_dai.mi2s_dai_data.bitwidth);
+				return -EINVAL;
+			}
+		}
+		dev_err(dai->dev, "%s: dai id %d dai_data->channels = %d\n"
+			"sample_rate = %u i2s_cfg_minor_version = 0x%x\n"
+			"bit_width = %hu  channel_mode = 0x%x mono_stereo = %#x\n"
+			"ws_src = 0x%x sample_rate = %u data_format = 0x%x\n"
+			"reserved = %u\n", __func__, dai->id, dai_data->channels,
+			dai_data->rate, i2s->i2s_cfg_minor_version, i2s->bit_width,
+			i2s->channel_mode, i2s->mono_stereo, i2s->ws_src,
+			i2s->sample_rate, i2s->data_format, i2s->reserved);
+
+
+	if (msm_mi2s_get_port_id(dai->id, SNDRV_PCM_STREAM_PLAYBACK,
+			 &port_id) != 0) {
+		dev_err(dai->dev, "%s: Invalid Port ID 0x%x\n",__func__, port_id);
+		return -EINVAL;
+	}
+
+
+	dev_err(dai->dev, "%s: dai id %d, afe port id = 0x%x\n"
+		"dai_data->channels = %u sample_rate = %u\n", __func__,
+		dai->id, port_id, dai_data->channels, dai_data->rate);
+
+	if (!test_bit(STATUS_PORT_STARTED, dai_data->status_mask)) {
+		/* PORT START should be set if prepare called
+		 * in active state.
+		 */
+		rc = afe_port_start(port_id, &dai_data->port_config,dai_data->rate);
+
+		if (IS_ERR_VALUE(rc))
+			dev_err(dai->dev, "fail to open AFE port 0x%x\n", dai->id);
+		else
+			set_bit(STATUS_PORT_STARTED,dai_data->status_mask);
+	}
+	if (!test_bit(STATUS_PORT_STARTED, dai_data->hwfree_status)) {
+		set_bit(STATUS_PORT_STARTED, dai_data->hwfree_status);
+		dev_dbg(dai->dev, "%s: set hwfree_status to started\n",__func__);
+	}
+	return rc;
+
+
+error_invalid_data:
+	pr_err("%s: dai_data->channels = %d channel_mode = %d\n", __func__,
+		 dai_data->channels, dai_data->port_config.i2s.channel_mode);
+	return -EINVAL;
+
+	}else if(pll_id == 0){
+		if (msm_mi2s_get_port_id(dai->id, SNDRV_PCM_STREAM_PLAYBACK, &port_id) != 0) {
+			dev_err(dai->dev, "%s: Invalid Port ID 0x%x\n", __func__, port_id);
+		}
+
+		dev_err(dai->dev, "%s: closing afe port id = 0x%x\n", __func__, port_id);
+
+		if (test_bit(STATUS_PORT_STARTED, dai_data->status_mask)) {
+			rc = afe_close(port_id);
+			if (IS_ERR_VALUE(rc))
+				dev_err(dai->dev, "fail to close AFE port\n");
+			clear_bit(STATUS_PORT_STARTED, dai_data->status_mask);
+		}
+		if (test_bit(STATUS_PORT_STARTED, dai_data->hwfree_status))
+			clear_bit(STATUS_PORT_STARTED, dai_data->hwfree_status);
+	}
+	return rc;
+}
+#endif
 
 static int msm_dai_q6_mi2s_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 {
@@ -2628,6 +2766,9 @@ static struct snd_soc_dai_ops msm_dai_q6_mi2s_ops = {
 	.hw_params	= msm_dai_q6_mi2s_hw_params,
 	.hw_free	= msm_dai_q6_mi2s_hw_free,
 	.set_fmt	= msm_dai_q6_mi2s_set_fmt,
+#ifdef GIGASET_EDIT
+	.set_pll	= msm_dai_q6_mi2s_set_clk,
+#endif
 	.shutdown	= msm_dai_q6_mi2s_shutdown,
 };
 

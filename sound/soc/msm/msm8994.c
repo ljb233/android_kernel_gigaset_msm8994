@@ -224,7 +224,9 @@ static const char *const auxpcm_rate_text[] = {"8000", "16000"};
 static const struct soc_enum msm8994_auxpcm_enum[] = {
 		SOC_ENUM_SINGLE_EXT(2, auxpcm_rate_text),
 };
+#ifndef GIGASET_EDIT
 static const char *const quat_mi2s_clk_text[] = {"Off", "On"};
+#endif
 
 struct snd_soc_card snd_soc_card_msm8994 = {
 	.name		= "msm8994-tomtom-snd-card",
@@ -1381,9 +1383,12 @@ static int tert_mi2s_sample_rate_put(struct snd_kcontrol *kcontrol,
 		tert_mi2s_sample_rate = SAMPLING_RATE_192KHZ;
 		break;
 	case 1:
-		//tert_mi2s_sample_rate = SAMPLING_RATE_96KHZ;
-		//break;
+		tert_mi2s_sample_rate = SAMPLING_RATE_96KHZ;
+		break;
 #ifdef GIGASET_EDIT
+	case 0:
+		tert_mi2s_sample_rate = SAMPLING_RATE_48KHZ;
+		break;
 	case 3 :
 		tert_mi2s_sample_rate = SAMPLING_RATE_16KHZ;
 		break;
@@ -1391,9 +1396,8 @@ static int tert_mi2s_sample_rate_put(struct snd_kcontrol *kcontrol,
 		tert_mi2s_sample_rate = SAMPLING_RATE_8KHZ;
 		break;
 #endif
-	case 0:
 	default:
-		tert_mi2s_sample_rate = SAMPLING_RATE_48KHZ;
+		break;
 	}
 
 	pr_debug("%s: sample_rate = %d\n", __func__, tert_mi2s_sample_rate);
@@ -1434,12 +1438,14 @@ static int tert_mi2s_bit_format_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+#ifndef GIGASET_EDIT
 static int quat_mi2s_clk_get(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
 	ucontrol->value.integer.value[0] = atomic_read(&quat_mi2s_rsc_ref) >= 1;
 	return 0;
 }
+#endif
 
 static int msm_proxy_rx_ch_get(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
@@ -1673,6 +1679,7 @@ static int msm_reset_pinctrl(struct msm_pinctrl_info *pinctrl_info,
 		goto err;
 	}
 
+	pr_debug("%s:pinctrl_info->curr_state = %d\n",__func__,pinctrl_info->curr_state);
 	switch (pinctrl_info->curr_state) {
 	case STATE_AUXPCM_ACTIVE:
 		ret = pinctrl_select_state(pinctrl_info->pinctrl,
@@ -1808,8 +1815,7 @@ static int msm_get_pinctrl(struct platform_device *pdev)
 		goto err;
 	}
 #ifndef CONFIG_MACH_PM9X
-	pinctrl_info->tert_mi2s_active = pinctrl_lookup_state(pinctrl,
-						"tert_mi2s-active");
+	pinctrl_info->tert_mi2s_active = pinctrl_lookup_state(pinctrl,"tert_mi2s-active");
 	if (IS_ERR(pinctrl_info->tert_mi2s_active)) {
 		pr_err("%s: could not get tert_mi2s pinstate\n", __func__);
 		goto err;
@@ -1863,6 +1869,20 @@ static int msm_get_pinctrl(struct platform_device *pdev)
 		goto err;
 	}
 	muxsel = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+						"lpaif_sec_mode_muxsel");
+	if (!muxsel) {
+		dev_err(&pdev->dev, "MUX addr invalid for AUXPCM\n");
+		ret = -ENODEV;
+		goto err;
+	}
+	pdata->sec_mux = ioremap(muxsel->start, resource_size(muxsel));
+	if (pdata->sec_mux == NULL) {
+		pr_err("%s: AUXPCM muxsel virt addr is null\n", __func__);
+		ret = -EINVAL;
+		goto err;
+	}
+
+	muxsel = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 						"lpaif_tert_mode_muxsel");
 	if (!muxsel) {
 		dev_err(&pdev->dev, "MUX addr invalid for TER_MI2S\n");
@@ -1875,6 +1895,7 @@ static int msm_get_pinctrl(struct platform_device *pdev)
 		ret = -EINVAL;
 		goto err;
 	}
+#ifndef GIGASET_EDIT
 	muxsel = platform_get_resource_byname(pdev, IORESOURCE_MEM,
 						"lpaif_quat_mode_muxsel");
 	if (!muxsel) {
@@ -1888,19 +1909,8 @@ static int msm_get_pinctrl(struct platform_device *pdev)
 		ret = -EINVAL;
 		goto err;
 	}
-	muxsel = platform_get_resource_byname(pdev, IORESOURCE_MEM,
-						"lpaif_sec_mode_muxsel");
-	if (!muxsel) {
-		dev_err(&pdev->dev, "MUX addr invalid for AUXPCM\n");
-		ret = -ENODEV;
-		goto err;
-	}
-	pdata->sec_mux = ioremap(muxsel->start, resource_size(muxsel));
-	if (pdata->sec_mux == NULL) {
-		pr_err("%s: AUXPCM muxsel virt addr is null\n", __func__);
-		ret = -EINVAL;
-		goto err;
-	}
+#endif
+	
 	return 0;
 
 err:
@@ -1908,8 +1918,10 @@ err:
 		iounmap(pdata->pri_mux);
 	if (pdata->ter_mux)
 		iounmap(pdata->ter_mux);
+#ifndef GIGASET_EDIT
 	if (pdata->quad_mux)
 		iounmap(pdata->quad_mux);
+#endif
 	devm_pinctrl_put(pinctrl);
 	pinctrl_info->pinctrl = NULL;
 	return -EINVAL;
@@ -2259,7 +2271,7 @@ static int msm8994_quat_mi2s_snd_startup(struct snd_pcm_substream *substream)
 		if (ret < 0) pr_err("%s: set fmt cpu dai failed, err:%d\n", __func__, ret);
 #else
 		iowrite32(I2S_SLAVE_SEL << I2S_MASTER_OFFSET,
-		pdata->quad_mux);
+		pinctrl_info->mux);
 
 		quat_mi2s_clk.clk_set_mode = Q6AFE_LPASS_MODE_CLK1_VALID;
 		quat_mi2s_clk.clk_src =Q6AFE_LPASS_CLK_SRC_EXTERNAL;
@@ -2272,9 +2284,11 @@ static int msm8994_quat_mi2s_snd_startup(struct snd_pcm_substream *substream)
 		ret = snd_soc_dai_set_fmt(cpu_dai, SND_SOC_DAIFMT_CBS_CFS);
 		if (ret < 0) pr_err("%s: set fmt cpu dai failed, err:%d\n", __func__, ret);
 #endif
+#ifndef GIGASET_EDIT
 		pr_info("%s Quaternary MI2S Clock is Enabled\n", __func__);
 		snd_ctl_notify(snd_soc_card_msm8994.snd_card, SNDRV_CTL_EVENT_MASK_VALUE,
 			&snd_soc_card_get_kcontrol(&snd_soc_card_msm8994, "QUAT_MI2S Clock")->id);
+#endif
 	}
 
 
@@ -2446,7 +2460,7 @@ static int msm8994_pri_mi2s_snd_startup(struct snd_pcm_substream *substream)
 			pr_err("%s: set fmt cpu dai failed, err:%d\n", __func__, ret);
 #else
 		iowrite32(I2S_SLAVE_SEL << I2S_MASTER_OFFSET,
-		pdata->pri_mux);
+		pinctrl_info->mux);
 
 		pri_mi2s_clk.clk_set_mode = Q6AFE_LPASS_MODE_CLK1_VALID;
         pri_mi2s_clk.clk_src =Q6AFE_LPASS_CLK_SRC_EXTERNAL;
@@ -2730,7 +2744,9 @@ static const struct soc_enum msm_snd_enum[] = {
 	SOC_ENUM_SINGLE_EXT(8, proxy_rx_ch_text),
 	SOC_ENUM_SINGLE_EXT(3, hdmi_rx_sample_rate_text),
 	SOC_ENUM_SINGLE_EXT(2, vi_feed_ch_text),
+#ifndef GIGASET_EDIT
 	SOC_ENUM_SINGLE_EXT(2, quat_mi2s_clk_text),
+#endif
 };
 
 #ifdef GIGASET_EDIT
@@ -2810,8 +2826,10 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 			quat_mi2s_bit_format_get, quat_mi2s_bit_format_put),
 	SOC_ENUM_EXT("QUAT_MI2S SampleRate", msm_snd_enum[5],
 			quat_mi2s_sample_rate_get, quat_mi2s_sample_rate_put),
+#ifndef GIGASET_EDIT
 	SOC_ENUM_EXT("QUAT_MI2S Clock", msm_snd_enum[9],
 			quat_mi2s_clk_get, NULL),
+#endif
 #ifdef GIGASET_EDIT
 	// Add by Harry for low sample
 	SOC_ENUM_EXT("TERT_MI2S Master",tert_mi2s_mast_enum,
@@ -4021,6 +4039,7 @@ static struct snd_soc_dai_link msm8994_common_dai_links[] = {
 		.codec_dai_name = "tomtom_mad1",
 		.codec_name = "tomtom_codec",
 	},
+#ifndef GIGASET_EDIT
 	{
 		.name = "MultiMedia3 Record",
 		.stream_name = "MultiMedia3 Capture",
@@ -4035,7 +4054,6 @@ static struct snd_soc_dai_link msm8994_common_dai_links[] = {
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA3,
 	},
-#ifndef GIGASET_EDIT
 	{
 		.name = "Quaternary MI2S Hostless",
 		.stream_name = "QUAT_MI2S_TX Hostless",
